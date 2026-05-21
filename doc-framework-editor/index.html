@@ -1,0 +1,2831 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文档框架编辑器</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<style>
+:root {
+  --bg: #faf7f2;
+  --bg2: #f4efe6;
+  --bg3: #ede5d8;
+  --border: #d4c8b8;
+  --border2: #c4b5a0;
+  --text: #2d2420;
+  --text2: #5c4f44;
+  --text3: #8c7d70;
+  --accent: #c9536a;
+  --accent2: #e8768a;
+  --accent-pale: #f9e8eb;
+  --toolbar-h: 52px;
+
+  /* 15-color palette — sakura-chroma inspired, each with L1/L2/L3 shades */
+  --c1-l1:#c9536a; --c1-l2:#e8a0ac; --c1-l3:#f7dde1;   /* 樱桃粉 */
+  --c2-l1:#7b5ea7; --c2-l2:#b09bd0; --c2-l3:#e3daf0;   /* 紫藤 */
+  --c3-l1:#3d7ebf; --c3-l2:#82b0d8; --c3-l3:#d0e4f2;   /* 瓷青 */
+  --c4-l1:#2a8a6e; --c4-l2:#72bda8; --c4-l3:#c6e8df;   /* 翠竹 */
+  --c5-l1:#c47c2b; --c5-l2:#e0ae72; --c5-l3:#f5e3c6;   /* 秋柿 */
+  --c6-l1:#b5485a; --c6-l2:#d98896; --c6-l3:#f2d4d9;   /* 绛红 */
+  --c7-l1:#5478b0; --c7-l2:#8eaad4; --c7-l3:#d4e0f0;   /* 石青 */
+  --c8-l1:#6b8e3e; --c8-l2:#9fc070; --c8-l3:#daecc4;   /* 竹绿 */
+  --c9-l1:#9e5a8e; --c9-l2:#c896bc; --c9-l3:#eedde8;   /* 牡丹 */
+  --c10-l1:#3a6e8a;--c10-l2:#74adc4;--c10-l3:#c6dfe9;  /* 青瓷 */
+  --c11-l1:#a86430;--c11-l2:#cf9e6e;--c11-l3:#ecdcc4;  /* 琥珀 */
+  --c12-l1:#527a5a;--c12-l2:#88b090;--c12-l3:#cfe3d2;  /* 松绿 */
+  --c13-l1:#7a4e7a;--c13-l2:#b088b0;--c13-l3:#e2d0e2;  /* 紫苏 */
+  --c14-l1:#486878;--c14-l2:#82a8b8;--c14-l3:#ccdde5;  /* 蓝灰 */
+  --c15-l1:#8a6040;--c15-l2:#bc9874;--c15-l3:#e8d8c4;  /* 茶棕 */
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Noto Sans SC', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ── TOOLBAR ── */
+.toolbar {
+  height: var(--toolbar-h);
+  background: var(--bg2);
+  border-bottom: 1.5px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 8px;
+  flex-shrink: 0;
+  position: relative;
+}
+.toolbar-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: .03em;
+  margin-right: 8px;
+  white-space: nowrap;
+}
+.toolbar-title span {
+  color: var(--accent);
+}
+.tb-sep { width: 1px; height: 22px; background: var(--border2); margin: 0 4px; }
+.tb-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 11px;
+  border-radius: 5px;
+  border: 1.5px solid var(--border2);
+  background: var(--bg);
+  color: var(--text2);
+  font-size: 12.5px;
+  font-family: 'Noto Sans SC', sans-serif;
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+}
+.tb-btn:hover { background: var(--bg3); border-color: var(--accent2); color: var(--accent); }
+.tb-btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 500;
+}
+.tb-btn.primary:hover { background: #b8425a; }
+.tb-btn svg { flex-shrink: 0; }
+
+/* ── MAIN LAYOUT ── */
+.main {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* ── EDITOR PANEL ── */
+.editor-panel {
+  width: 38%;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1.5px solid var(--border);
+  background: var(--bg);
+}
+.panel-header {
+  height: 36px;
+  display: flex; align-items: center;
+  padding: 0 14px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text3);
+  letter-spacing: .05em;
+  gap: 8px;
+}
+.panel-header-hint {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text3);
+  opacity: .7;
+}
+.editor-wrap {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+#md-editor {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  background: transparent;
+  padding: 14px 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  line-height: 1.85;
+  color: var(--text);
+  tab-size: 2;
+}
+#md-editor::placeholder { color: var(--text3); opacity: .5; }
+
+/* ── MINDMAP PANEL ── */
+.map-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+.map-controls {
+  height: 36px;
+  display: flex; align-items: center;
+  padding: 0 14px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  gap: 8px;
+}
+.map-ctl-btn {
+  width: 26px; height: 26px;
+  border-radius: 4px;
+  border: 1px solid var(--border2);
+  background: var(--bg);
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .12s;
+}
+.map-ctl-btn:hover { background: var(--bg3); color: var(--accent); }
+.map-legend {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 10px;
+  font-size: 11px; color: var(--text3);
+}
+.legend-item { display: flex; align-items: center; gap: 4px; }
+.legend-dot {
+  width: 10px; height: 10px;
+  border-radius: 2px;
+}
+#map-canvas {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  cursor: grab;
+}
+#map-canvas:active { cursor: grabbing; }
+#map-svg {
+  position: absolute;
+  top: 0; left: 0;
+  z-index: 1;
+  will-change: transform;
+  transform-origin: 0 0;
+}
+.map-layout-switch {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(250,247,242,.92);
+  border: 1px solid rgba(184,165,150,.75);
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(45,36,32,.12);
+  z-index: 8;
+  pointer-events: auto;
+}
+.map-layout-btn {
+  min-width: 52px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text3);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all .12s;
+}
+.map-layout-btn:hover {
+  background: rgba(255,255,255,.85);
+  color: var(--accent);
+}
+.map-layout-btn.active {
+  background: var(--accent-pale);
+  border-color: var(--accent2);
+  color: var(--accent);
+}
+
+/* ── LEVEL LEGEND PANEL ── */
+.level-hint {
+  padding: 4px 14px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  display: flex; gap: 10px; flex-wrap: wrap;
+  font-size: 10.5px; color: var(--text3);
+}
+.level-hint span { display: flex; align-items: center; gap: 3px; }
+.lh-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  background: var(--bg3);
+  padding: 0 4px;
+  border-radius: 3px;
+  color: var(--text2);
+}
+
+/* ── NODE STYLES (SVG foreign object) ── */
+.node-box {
+  display: flex; align-items: center;
+  border-radius: 5px;
+  padding: 5px 10px;
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  transition: opacity .15s;
+  white-space: nowrap;
+  border: 1.5px solid transparent;
+}
+.node-box:hover { filter: brightness(.95); }
+.node-label {
+  font-family: 'Noto Sans SC', sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 130px;
+  flex: 1;
+  cursor: text;
+}
+.node-label:hover { text-decoration: underline dotted; }
+.node-type-badge {
+  margin-left: 5px;
+  font-size: 9.5px;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(255,255,255,.45);
+  color: inherit;
+  opacity: .8;
+  font-family: 'JetBrains Mono', monospace;
+  flex-shrink: 0;
+}
+.node-toggle {
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.6);
+  border: 1px solid rgba(0,0,0,.15);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px;
+  margin-left: 4px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+/* Body expand button on heading node */
+.node-body-btn {
+  width: 14px; height: 14px;
+  border-radius: 3px;
+  background: rgba(255,255,255,.5);
+  border: 1px solid rgba(0,0,0,.12);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; line-height: 1;
+  margin-left: 4px;
+  flex-shrink: 0;
+  cursor: pointer;
+  user-select: none;
+}
+.node-body-btn:hover { background: rgba(255,255,255,.8); }
+
+/* ── MODAL OVERLAY ── */
+.modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(45,36,32,.4);
+  backdrop-filter: blur(3px);
+  z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none;
+  transition: opacity .2s;
+}
+.modal-overlay.open { opacity: 1; pointer-events: all; }
+.modal {
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.18);
+  width: 680px;
+  max-width: 95vw;
+  max-height: 85vh;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.modal-header {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.modal-title {
+  font-family: 'Noto Serif SC', serif;
+  font-size: 16px;
+  font-weight: 600;
+}
+.modal-close {
+  width: 28px; height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: none;
+  cursor: pointer; font-size: 14px; color: var(--text3);
+}
+.modal-close:hover { background: var(--bg3); color: var(--text); }
+.modal-body {
+  flex: 1; overflow-y: auto;
+  padding: 16px 20px;
+}
+.modal-footer {
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  display: flex; justify-content: flex-end; gap: 8px;
+}
+
+/* Export modal styles */
+.export-section { margin-bottom: 18px; }
+.export-section-title {
+  font-size: 11px; font-weight: 600;
+  color: var(--text3); letter-spacing: .08em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.export-section-title span { font-weight: 400; text-transform: none; font-size: 11px; color: var(--text3); opacity: .75; }
+
+/* Preset chips */
+.preset-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.preset-chip {
+  padding: 4px 10px; border-radius: 20px;
+  border: 1.5px solid var(--border2); background: var(--bg2);
+  font-size: 11.5px; cursor: pointer; transition: all .12s;
+  color: var(--text2); user-select: none;
+}
+.preset-chip:hover { border-color: var(--accent2); color: var(--accent); background: var(--accent-pale); }
+.preset-chip.active { border-color: var(--accent); background: var(--accent-pale); color: var(--accent); font-weight: 500; }
+
+/* Field list */
+.field-list { display: flex; flex-direction: column; gap: 5px; }
+
+/* Field row */
+.field-row {
+  display: flex; align-items: stretch;
+  border-radius: 7px; background: var(--bg2);
+  border: 1.5px solid var(--border); overflow: hidden;
+  transition: border-color .12s, box-shadow .12s;
+  cursor: default;
+}
+.field-row.drag-over { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-pale); }
+.field-row.dragging { opacity: .3; border-style: dashed; }
+.field-row.drop-above { box-shadow: 0 -2px 0 0 var(--accent); }
+.field-row.drop-below { box-shadow: 0 2px 0 0 var(--accent); }
+.field-row.drag-over { box-shadow: 0 2px 0 0 var(--accent); background: var(--accent-pale) !important; border-color: var(--accent2) !important; }
+
+/* Drag handle */
+.drag-handle {
+  width: 26px; display: flex; align-items: center; justify-content: center;
+  color: var(--border2); cursor: grab; flex-shrink: 0;
+  font-size: 11px; background: var(--bg3);
+  border-right: 1px solid var(--border);
+  user-select: none;
+  transition: color .12s;
+}
+.drag-handle:hover { color: var(--text3); }
+.drag-handle:active { cursor: grabbing; }
+
+/* Checkbox area */
+.field-check-wrap { display: flex; align-items: center; padding: 0 9px; flex-shrink: 0; }
+.field-check { accent-color: var(--accent); cursor: pointer; width: 14px; height: 14px; }
+
+/* Label area */
+.field-label-area {
+  padding: 7px 6px 7px 0;
+  min-width: 108px; max-width: 108px;
+  display: flex; flex-direction: column; justify-content: center; flex-shrink: 0;
+}
+.field-name { font-size: 12px; font-weight: 500; color: var(--text); line-height: 1.3; }
+.field-tag {
+  font-size: 9px; font-family: 'JetBrains Mono', monospace;
+  background: var(--bg3); padding: 1px 4px; border-radius: 3px;
+  color: var(--text3); margin-top: 3px; display: inline-block;
+}
+.field-custom-tag {
+  font-size: 9px; font-family: 'JetBrains Mono', monospace;
+  background: #f0e8ff; padding: 1px 4px; border-radius: 3px;
+  color: #7b5ea7; margin-top: 3px; display: inline-block;
+}
+
+/* Config area (right side of row) */
+.field-config-area {
+  flex: 1; padding: 6px 8px;
+  display: flex; flex-direction: column; gap: 4px;
+  border-left: 1px solid var(--border);
+  min-width: 0;
+}
+.field-config-area.collapsed { display: none; }
+.field-config-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+
+/* Selects & inputs */
+.field-type-select {
+  padding: 2px 5px; border-radius: 4px;
+  border: 1px solid var(--border2);
+  background: var(--bg); color: var(--text);
+  font-size: 11px; font-family: inherit; cursor: pointer;
+}
+.field-type-select:focus { outline: none; border-color: var(--accent2); }
+.field-input {
+  padding: 3px 7px; border-radius: 4px;
+  border: 1px solid var(--border2);
+  background: var(--bg); color: var(--text);
+  font-size: 11px; font-family: inherit; width: 100%;
+}
+.field-input:focus { outline: none; border-color: var(--accent2); }
+
+/* Options editor */
+.options-editor { display: flex; flex-direction: column; gap: 3px; }
+.option-row { display: flex; align-items: center; gap: 3px; }
+.option-row input {
+  flex: 1; padding: 2px 6px;
+  border: 1px solid var(--border2); border-radius: 3px;
+  background: var(--bg); font-size: 11px;
+  font-family: inherit; color: var(--text);
+}
+.option-row input:focus { outline: none; border-color: var(--accent2); }
+.opt-del-btn { border: none; background: none; cursor: pointer; color: var(--text3); font-size: 13px; padding: 0 2px; line-height: 1; }
+.opt-del-btn:hover { color: var(--accent); }
+.add-option-btn { font-size: 11px; color: var(--accent); background: none; border: none; cursor: pointer; padding: 1px 0; text-align: left; }
+.add-option-btn:hover { text-decoration: underline; }
+.def-sel-label { font-size: 10px; color: var(--text3); flex-shrink: 0; white-space: nowrap; }
+
+/* Delete button */
+.field-del-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; flex-shrink: 0;
+  background: none; border: none; border-left: 1px solid var(--border);
+  color: var(--text3); cursor: pointer; font-size: 13px;
+  transition: color .12s, background .12s;
+}
+.field-del-btn:hover { color: var(--accent); background: var(--accent-pale); }
+
+/* Add custom field button */
+.add-field-btn {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 14px; border-radius: 7px;
+  border: 1.5px dashed var(--border2); background: none;
+  color: var(--text3); font-size: 12px; font-family: inherit;
+  cursor: pointer; transition: all .12s; width: 100%; margin-top: 6px;
+}
+.add-field-btn:hover { border-color: var(--accent2); color: var(--accent); background: var(--accent-pale); }
+
+/* New field name input inline */
+.new-field-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 10px; border-radius: 7px;
+  border: 1.5px solid var(--accent2); background: var(--accent-pale);
+  margin-top: 5px;
+}
+.new-field-row input {
+  flex: 1; padding: 4px 8px; border-radius: 4px;
+  border: 1px solid var(--accent2); background: var(--bg);
+  font-size: 12px; font-family: inherit; color: var(--text);
+}
+.new-field-row input:focus { outline: none; }
+.new-field-confirm {
+  padding: 4px 10px; border-radius: 4px;
+  background: var(--accent); color: #fff; border: none;
+  font-size: 12px; font-family: inherit; cursor: pointer;
+  white-space: nowrap;
+}
+.new-field-confirm:hover { background: #b8425a; }
+.new-field-cancel {
+  padding: 4px 8px; border-radius: 4px;
+  background: none; color: var(--text3); border: 1px solid var(--border2);
+  font-size: 12px; font-family: inherit; cursor: pointer;
+}
+.new-field-cancel:hover { background: var(--bg3); }
+
+/* Node context menu */
+.ctx-menu {
+  position: fixed;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.15);
+  z-index: 900;
+  min-width: 160px;
+  overflow: hidden;
+  display: none;
+}
+.ctx-menu.open { display: block; }
+.ctx-item {
+  padding: 9px 14px;
+  font-size: 12.5px;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  color: var(--text2);
+  transition: background .1s;
+}
+.ctx-item:hover { background: var(--bg3); color: var(--text); }
+.ctx-item svg { flex-shrink: 0; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+/* Splitter */
+.splitter {
+  width: 5px;
+  background: var(--border);
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background .15s;
+}
+.splitter:hover { background: var(--accent2); }
+
+/* Toast */
+.toast {
+  position: fixed;
+  bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+  background: var(--text);
+  color: var(--bg);
+  padding: 9px 18px;
+  border-radius: 6px;
+  font-size: 13px;
+  opacity: 0;
+  transition: all .25s;
+  z-index: 2000;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Resize handle */
+.resize-indicator {
+  position: absolute; top: 0; right: 0; bottom: 0;
+  width: 3px;
+  cursor: col-resize;
+}
+</style>
+</head>
+<body>
+
+<!-- TOOLBAR -->
+<div class="toolbar">
+  <div class="toolbar-title">文档<span>框架</span>编辑器</div>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" onclick="loadExample()">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M2 2h5v2H4v8h8v-3h2v5H2V2z"/><path d="M9 2h5v5h-2V5.41L7.41 10 6 8.59 10.59 4H9V2z"/></svg>
+    示例框架
+  </button>
+  <button class="tb-btn" onclick="clearEditor()">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H2.506a.58.58 0 0 0-.01 1.16l.337 13.112A1.5 1.5 0 0 0 4.33 16h7.34a1.5 1.5 0 0 0 1.5-1.228l.337-13.112a.58.58 0 0 0-.01-1.16H11z"/></svg>
+    清空
+  </button>
+  <div class="tb-sep"></div>
+  <button class="tb-btn" onclick="renderMap()">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm0-1A7 7 0 1 1 8 1a7 7 0 0 1 0 14z"/></svg>
+    生成架构图
+  </button>
+  <button class="tb-btn primary" onclick="openExportModal()">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/></svg>
+    导出 Excel
+  </button>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <!-- EDITOR -->
+  <div class="editor-panel" id="editorPanel">
+    <div class="panel-header">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M14 1a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H2a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1h12zm-6 4H4v1h4V5zm4 3H4v1h8V8zm-4 3H4v1h4v-1z"/></svg>
+      Markdown 编辑区
+      <span class="panel-header-hint">[task] 标注任务类型节点</span>
+    </div>
+    <div class="level-hint">
+      <span><span class="lh-tag">#</span> Map</span>
+      <span><span class="lh-tag">##</span> 一级目录</span>
+      <span><span class="lh-tag">###</span> 二级目录</span>
+      <span><span class="lh-tag">####</span> 三级目录</span>
+      <span><span class="lh-tag">#####</span> 四级目录</span>
+      <span><span class="lh-tag">######</span> 五级目录</span>
+    </div>
+    <div class="editor-wrap">
+      <textarea id="md-editor" placeholder="# 用户手册
+
+## 前言
+
+### 关于本手册
+
+### 适用对象
+
+## 产品介绍
+
+### 型号说明 [task]
+
+### 部件说明
+
+#### 驱动器部件
+
+#### 电机部件"></textarea>
+    </div>
+  </div>
+
+  <!-- SPLITTER -->
+  <div class="splitter" id="splitter"></div>
+
+  <!-- MAP PANEL -->
+  <div class="map-panel" id="mapPanel">
+    <div class="panel-header">
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M1.5 1a.5.5 0 0 0-.5.5v4a.5.5 0 0 1-1 0v-4A1.5 1.5 0 0 1 1.5 0h4a.5.5 0 0 1 0 1h-4zM10 .5a.5.5 0 0 1 .5-.5h4A1.5 1.5 0 0 1 16 1.5v4a.5.5 0 0 1-1 0v-4a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 1-.5-.5zM.5 10a.5.5 0 0 1 .5.5v4a.5.5 0 0 0 .5.5h4a.5.5 0 0 1 0 1h-4A1.5 1.5 0 0 1 0 14.5v-4a.5.5 0 0 1 .5-.5zm15 0a.5.5 0 0 1 .5.5v4a1.5 1.5 0 0 1-1.5 1.5h-4a.5.5 0 0 1 0-1h4a.5.5 0 0 0 .5-.5v-4a.5.5 0 0 1 .5-.5z"/></svg>
+      XMind 架构图
+    </div>
+    <div class="map-controls">
+      <button class="map-ctl-btn" onclick="zoomIn()" title="放大">+</button>
+      <button class="map-ctl-btn" onclick="zoomOut()" title="缩小">−</button>
+      <button class="map-ctl-btn" onclick="resetView()" title="重置视图">⊙</button>
+      <button class="map-ctl-btn" onclick="expandAll()" title="展开全部">⊞</button>
+      <button class="map-ctl-btn" onclick="collapseToL2()" title="收起到二级">⊟</button>
+      <div class="map-legend">
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#ddd;border:1.5px solid #aaa"></div>
+          concept
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background:#c8edd9;border:1.5px solid #72bda8"></div>
+          task
+        </div>
+      </div>
+    </div>
+    <div id="map-canvas">
+      <svg id="map-svg" xmlns="http://www.w3.org/2000/svg">
+        <g id="map-layer"></g>
+      </svg>
+      <div class="map-layout-switch" id="mapLayoutSwitch">
+        <button class="map-layout-btn active" id="mindmapLayoutBtn" type="button" data-layout="mindmap">脑图</button>
+        <button class="map-layout-btn" id="fishboneLayoutBtn" type="button" data-layout="fishbone">鱼骨</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CONTEXT MENU -->
+<div class="ctx-menu" id="ctxMenu">
+  <div class="ctx-item" onclick="toggleNodeType()">
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2zm6.5 4.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3a.5.5 0 0 1 1 0z"/></svg>
+    切换类型 (concept ↔ task)
+  </div>
+  <div class="ctx-item" onclick="toggleCollapse()">
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M1 8a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 0 1h-13A.5.5 0 0 1 1 8z"/></svg>
+    展开 / 收起
+  </div>
+</div>
+
+<!-- EXPORT MODAL -->
+<div class="modal-overlay" id="exportModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">导出 Excel 配置</div>
+      <button class="modal-close" onclick="closeExportModal()">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- 常用预设字段 -->
+      <div class="export-section">
+        <div class="export-section-title">快速添加常用字段</div>
+        <div class="preset-chips" id="presetChips"></div>
+      </div>
+
+      <!-- 字段配置区 -->
+      <div class="export-section">
+        <div class="export-section-title">已启用字段 <span style="font-weight:400;text-transform:none;font-size:11px;color:var(--text3)">— 勾选的字段将导出到 Excel，目录列始终导出</span></div>
+        <div class="field-grid" id="fieldGrid"></div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="tb-btn" onclick="closeExportModal()">取消</button>
+      <button class="tb-btn primary" onclick="doExport()">确认导出</button>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════
+//  COLOR SYSTEM — 15 palettes × 3 levels
+// ══════════════════════════════════════════════
+const PALETTES = [
+  {l1:'#c9536a',l2:'#e8a0ac',l3:'#f7dde1',text:'#fff'},
+  {l1:'#7b5ea7',l2:'#b09bd0',l3:'#e3daf0',text:'#fff'},
+  {l1:'#3d7ebf',l2:'#82b0d8',l3:'#d0e4f2',text:'#fff'},
+  {l1:'#2a8a6e',l2:'#72bda8',l3:'#c6e8df',text:'#fff'},
+  {l1:'#c47c2b',l2:'#e0ae72',l3:'#f5e3c6',text:'#fff'},
+  {l1:'#b5485a',l2:'#d98896',l3:'#f2d4d9',text:'#fff'},
+  {l1:'#5478b0',l2:'#8eaad4',l3:'#d4e0f0',text:'#fff'},
+  {l1:'#6b8e3e',l2:'#9fc070',l3:'#daecc4',text:'#fff'},
+  {l1:'#9e5a8e',l2:'#c896bc',l3:'#eedde8',text:'#fff'},
+  {l1:'#3a6e8a',l2:'#74adc4',l3:'#c6dfe9',text:'#fff'},
+  {l1:'#a86430',l2:'#cf9e6e',l3:'#ecdcc4',text:'#fff'},
+  {l1:'#527a5a',l2:'#88b090',l3:'#cfe3d2',text:'#fff'},
+  {l1:'#7a4e7a',l2:'#b088b0',l3:'#e2d0e2',text:'#fff'},
+  {l1:'#486878',l2:'#82a8b8',l3:'#ccdde5',text:'#fff'},
+  {l1:'#8a6040',l2:'#bc9874',l3:'#e8d8c4',text:'#fff'},
+];
+
+// task node overlay
+const TASK_BG = '#c8edd9';
+const TASK_BORDER = '#72bda8';
+const TASK_TEXT = '#1a5e40';
+
+// ══════════════════════════════════════════════
+//  MARKDOWN PARSER
+//  每个 heading 节点额外携带 body 数组:
+//    [{type:'text'|'image', content:string, src?:string, alt?:string}]
+//  body 来自该标题到下一同级/更高级标题之间的普通段落和图片行
+// ══════════════════════════════════════════════
+function parseMd(text) {
+  const lines = text.split('\n');
+  const nodes = [];
+  let idCounter = 0;
+  const stack = [];
+
+  // 先标注每行类型
+  const parsed = lines.map(raw => {
+    const line = raw.trim();
+    const hm = line.match(/^(#{1,6})\s+(.+)/);
+    if (hm) return {type:'heading', level: hm[1].length, text: hm[2].trim()};
+    const im = line.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
+    if (im) return {type:'image', alt: im[1], src: im[2]};
+    if (line) return {type:'text', text: line};
+    return {type:'empty'};
+  });
+
+  // 找所有 heading 的位置
+  const headingIdxs = [];
+  parsed.forEach((p, i) => { if (p.type === 'heading') headingIdxs.push(i); });
+
+  headingIdxs.forEach((hi, pos) => {
+    const p = parsed[hi];
+    let title = p.text;
+    let isTask = false;
+    if (/\[task\]/i.test(title)) {
+      isTask = true;
+      title = title.replace(/\[task\]/gi, '').trim();
+    }
+    const level = p.level;
+    const id = idCounter++;
+
+    while (stack.length && stack[stack.length-1].level >= level) stack.pop();
+    const parentId = stack.length ? stack[stack.length-1].id : null;
+    stack.push({level, id});
+
+    // 收集正文：到下一个 heading 为止
+    const nextHi = headingIdxs[pos + 1] ?? parsed.length;
+    const body = [];
+    for (let i = hi + 1; i < nextHi; i++) {
+      const bp = parsed[i];
+      if (bp.type === 'text')  body.push({type:'text',  content: bp.text});
+      if (bp.type === 'image') body.push({type:'image', src: bp.src, alt: bp.alt || ''});
+    }
+
+    nodes.push({
+      id, parentId, level, title, isTask, body,
+      collapsed: level <= 2 ? false : true,
+    });
+  });
+  return nodes;
+}
+
+// ══════════════════════════════════════════════
+//  LAYOUT ENGINE
+// ══════════════════════════════════════════════
+const NODE_W  = 190;   // heading node width
+const NODE_H  = 34;    // heading node height
+const BODY_W  = 220;   // body node width
+const BODY_H  = 32;    // minimum body node height (text)
+const BODY_IMG_H = 22; // body node height (image thumbnail)
+const H_GAP   = 52;    // horizontal gap between levels
+const V_GAP   = 8;     // vertical gap between siblings
+const BODY_GAP = 4;    // vertical gap between body items
+const BODY_STACK_GAP = 8;
+const BODY_INDENT = 12;
+const BODY_TEXT_LINE_H = 15;
+const BODY_TEXT_PAD_Y = 6;
+const BODY_TEXT_CHARS = 24;
+const BODY_BOX_PAD_X = 10;
+const BODY_BOX_PAD_Y = 8;
+const BODY_CONTENT_GAP = 8;
+const BODY_IMG_BTN_H = 28;
+const ROOT_GAP = 40;
+const FISH_SPINE_MARGIN = 28;
+const FISH_BRANCH_GAP = 72;
+const FISH_ROOT_TOP_PAD = 180;
+const FISH_SECTION_GAP = 72;
+
+function getPaletteIdx(nodeMap, node) {
+  let cur = node;
+  while (cur) {
+    if (cur.parentId === null || cur.parentId === undefined) return 0;
+    const par = nodeMap[cur.parentId];
+    if (!par) return 0;
+    if (par.level === 1) {
+      const siblings = Object.values(nodeMap).filter(n => n.parentId === par.id);
+      const idx = siblings.indexOf(cur);
+      return idx >= 0 ? idx : 0;
+    }
+    cur = par;
+  }
+  return 0;
+}
+
+function getNodeColor(nodeMap, node) {
+  if (node.level === 1) return {bg:'#1a1a2e', border:'#1a1a2e', color:'#faf7f2'};
+  const pi = getPaletteIdx(nodeMap, node) % PALETTES.length;
+  const pal = PALETTES[pi];
+  const shade = node.level === 2 ? 'l1' : node.level === 3 ? 'l2' : 'l3';
+  const textColor = node.level === 2 ? '#fff' : '#2d2420';
+  return {bg: pal[shade], border: pal.l1, color: textColor};
+}
+
+// body node gets a very light tint of its heading's palette
+function getBodyColor(nodeMap, headingNode) {
+  if (headingNode.level === 1) return {bg:'#2a2a4a', border:'#3a3a5a', color:'#d0d0e8'};
+  const pi = getPaletteIdx(nodeMap, headingNode) % PALETTES.length;
+  const pal = PALETTES[pi];
+  return {bg: pal.l3, border: pal.l2, color:'#2d2420'};
+}
+
+function buildTree(nodes) {
+  const map = {};
+  nodes.forEach(n => { map[n.id] = {...n, children: []}; });
+  const roots = [];
+  nodes.forEach(n => {
+    if (n.parentId === null) roots.push(map[n.id]);
+    else if (map[n.parentId]) map[n.parentId].children.push(map[n.id]);
+  });
+  return {roots, map};
+}
+
+// Total height of a heading node's body block (if body visible)
+function bodyBlockH(node) {
+  if (!node.body || node.body.length === 0) return 0;
+  return BODY_BOX_PAD_Y * 2 + node.body.reduce((sum, b, i) => {
+    return sum + bodyItemHeight(b) + (i > 0 ? BODY_CONTENT_GAP : 0);
+  }, 0);
+}
+
+function hasVisibleBody(node) {
+  return !!(node.bodyExpanded && node.body && node.body.length > 0);
+}
+
+function nodeOwnH(node) {
+  return NODE_H + (hasVisibleBody(node) ? BODY_STACK_GAP + bodyBlockH(node) : 0);
+}
+
+function childrenBlockH(node) {
+  if (node.collapsed || node.children.length === 0) return 0;
+  return node.children.reduce((sum, child) => sum + subtreeH(child) + V_GAP, -V_GAP);
+}
+
+function getBodyTextLines(text = '') {
+  return String(text).split('\n').reduce((sum, line) => {
+    const len = line.trim().length;
+    return sum + Math.max(1, Math.ceil((len || 1) / BODY_TEXT_CHARS));
+  }, 0);
+}
+
+// Subtree height including body
+function subtreeH(node) {
+  return Math.max(nodeOwnH(node), childrenBlockH(node));
+}
+
+function layoutTree(root, x, y) {
+  root.x = x;
+  const selfH = nodeOwnH(root);
+  const childH = childrenBlockH(root);
+  root.y = y + Math.max(0, (childH - selfH) / 2);
+
+  if (root.collapsed || root.children.length === 0) return;
+
+  const childX = x + NODE_W + H_GAP;
+  let curY = y + Math.max(0, (selfH - childH) / 2);
+  for (const child of root.children) {
+    const h = subtreeH(child);
+    layoutTree(child, childX, curY);
+    curY += h + V_GAP;
+  }
+}
+
+function bodyItemHeight(item) {
+  if (item.type === 'image') return BODY_IMG_BTN_H;
+  return Math.max(BODY_H, getBodyTextLines(item.content) * BODY_TEXT_LINE_H + BODY_TEXT_PAD_Y * 2);
+}
+
+function getVisibleNodes(node, acc=[]) {
+  acc.push(node);
+  if (!node.collapsed) node.children.forEach(child => getVisibleNodes(child, acc));
+  return acc;
+}
+
+function setFishSide(node, side) {
+  node._fishSide = side;
+  node.children.forEach(child => setFishSide(child, side));
+}
+
+function getBodyAnchor(node) {
+  const bodyH = bodyBlockH(node);
+  if (mapState.layoutMode === 'fishbone' && node._fishSide === -1) {
+    return {
+      x: node.x + BODY_INDENT,
+      y: node.y - BODY_STACK_GAP - bodyH,
+    };
+  }
+  return {
+    x: node.x + BODY_INDENT,
+    y: node.y + NODE_H + BODY_STACK_GAP,
+  };
+}
+
+function getNodeBounds(node) {
+  let minX = node.x;
+  let minY = node.y;
+  let maxX = node.x + NODE_W;
+  let maxY = node.y + NODE_H;
+
+  if (hasVisibleBody(node)) {
+    const anchor = getBodyAnchor(node);
+    maxX = Math.max(maxX, anchor.x + BODY_W);
+    maxY = Math.max(maxY, anchor.y + bodyBlockH(node));
+  }
+
+  return {minX, minY, maxX, maxY};
+}
+
+function getSubtreeBounds(node) {
+  const bounds = {minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity};
+  for (const item of getVisibleNodes(node, [])) {
+    const box = getNodeBounds(item);
+    bounds.minX = Math.min(bounds.minX, box.minX);
+    bounds.minY = Math.min(bounds.minY, box.minY);
+    bounds.maxX = Math.max(bounds.maxX, box.maxX);
+    bounds.maxY = Math.max(bounds.maxY, box.maxY);
+  }
+  return bounds;
+}
+
+function translateSubtree(node, dx, dy) {
+  node.x += dx;
+  node.y += dy;
+  node.children.forEach(child => translateSubtree(child, dx, dy));
+}
+
+function layoutMindmapRoots(roots) {
+  let startY = 0;
+  roots.forEach(root => {
+    layoutTree(root, 0, startY);
+    startY += subtreeH(root) + ROOT_GAP;
+  });
+}
+
+function layoutFishboneRoots(roots) {
+  let sectionY = 0;
+
+  roots.forEach(root => {
+    const spineY = sectionY + FISH_ROOT_TOP_PAD;
+    root.x = 0;
+    root.y = spineY - NODE_H / 2;
+    root._fish = {spineY, spineEnd: root.x + NODE_W + 160};
+    const rootBounds = getNodeBounds(root);
+
+    if (!root.collapsed && root.children.length > 0) {
+      const cursorX = {top: root.x + NODE_W + 96, bottom: root.x + NODE_W + 96};
+      let branchMaxX = rootBounds.maxX;
+      let branchMaxY = rootBounds.maxY;
+
+      root.children.forEach((child, index) => {
+        const side = index % 2 === 0 ? 'top' : 'bottom';
+        const sideDir = side === 'top' ? -1 : 1;
+        setFishSide(child, sideDir);
+        layoutTree(child, 0, 0);
+
+        const branchBounds = getSubtreeBounds(child);
+        const dx = cursorX[side] - branchBounds.minX;
+        const dy = side === 'top'
+          ? (spineY - FISH_SPINE_MARGIN - branchBounds.maxY)
+          : (spineY + FISH_SPINE_MARGIN - branchBounds.minY);
+
+        translateSubtree(child, dx, dy);
+
+        const placedBounds = getSubtreeBounds(child);
+        branchMaxX = Math.max(branchMaxX, placedBounds.maxX);
+        branchMaxY = Math.max(branchMaxY, placedBounds.maxY);
+        cursorX[side] = placedBounds.maxX + FISH_BRANCH_GAP;
+      });
+
+      root._fish.spineEnd = Math.max(cursorX.top, cursorX.bottom, branchMaxX + 48);
+      root._fish.sectionBottom = branchMaxY + 48;
+      sectionY = root._fish.sectionBottom + FISH_SECTION_GAP;
+    } else {
+      root._fish.sectionBottom = rootBounds.maxY + 80;
+      sectionY = root._fish.sectionBottom + FISH_SECTION_GAP;
+    }
+  });
+}
+
+// ══════════════════════════════════════════════
+//  RENDERER
+// ══════════════════════════════════════════════
+let mapState = { nodes: [], tree: null, scale: 1, tx: 40, ty: 40, layoutMode: 'mindmap' };
+let ctxTarget = null;
+
+function renderMap() {
+  const text = document.getElementById('md-editor').value;
+  const flat = parseMd(text);
+  if (flat.length === 0) { showToast('请先输入 Markdown 内容'); return; }
+
+  // Preserve collapse states across re-renders
+  const prevMap = {};
+  if (mapState.tree) Object.values(mapState.tree.map).forEach(n => {
+    prevMap[n.title + ':' + n.level] = {collapsed: n.collapsed, bodyExpanded: n.bodyExpanded};
+  });
+
+  flat.forEach(n => {
+    const key = n.title + ':' + n.level;
+    if (prevMap[key]) {
+      n.collapsed    = prevMap[key].collapsed;
+      n.bodyExpanded = prevMap[key].bodyExpanded ?? false;
+    } else {
+      n.collapsed    = n.level > 2;
+      n.bodyExpanded = false;
+    }
+  });
+
+  mapState.nodes = flat;
+  const {roots, map} = buildTree(flat);
+  mapState.tree = {roots, map};
+  drawMap();
+  resetView();
+}
+
+function drawMap() {
+  const layer = document.getElementById('map-layer');
+  layer.innerHTML = '';
+
+  const {roots, map} = mapState.tree;
+
+  // Layout
+  if (mapState.layoutMode === 'fishbone') layoutFishboneRoots(roots);
+  else layoutMindmapRoots(roots);
+
+  const visible = [];
+  roots.forEach(root => getVisibleNodes(root, visible));
+
+  // ── Draw connectors ──
+  const connG = document.createElementNS('http://www.w3.org/2000/svg','g');
+  if (mapState.layoutMode === 'fishbone') {
+    roots.forEach(root => {
+      if (root.collapsed || root.children.length === 0) return;
+      const spine = document.createElementNS('http://www.w3.org/2000/svg','line');
+      spine.setAttribute('x1', root.x + NODE_W);
+      spine.setAttribute('y1', root._fish.spineY);
+      spine.setAttribute('x2', root._fish.spineEnd);
+      spine.setAttribute('y2', root._fish.spineY);
+      spine.setAttribute('stroke', getNodeColor(map, root).border);
+      spine.setAttribute('stroke-width', '2');
+      spine.setAttribute('opacity', '0.38');
+      connG.appendChild(spine);
+    });
+  }
+  for (const node of visible) {
+    if (node.parentId === null || node.parentId === undefined) continue;
+    const parent = map[node.parentId];
+    if (!parent) continue;
+
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    const {border} = node.isTask ? {border: TASK_BORDER} : getNodeColor(map, node);
+    if (mapState.layoutMode === 'fishbone' && parent.level === 1) {
+      const joinX = node.x - 26;
+      const y2 = node.y + NODE_H / 2;
+      path.setAttribute('d', `M${joinX},${parent._fish.spineY} L${node.x},${y2}`);
+    } else {
+      const x1 = parent.x + NODE_W;
+      const y1 = parent.y + NODE_H / 2;
+      const x2 = node.x;
+      const y2 = node.y + NODE_H / 2;
+      const cx = (x1 + x2) / 2;
+      path.setAttribute('d', `M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`);
+    }
+    path.setAttribute('stroke', border);
+    path.setAttribute('stroke-width', '1.5');
+    path.setAttribute('fill', 'none');
+    path.setAttribute('opacity', '0.5');
+    connG.appendChild(path);
+  }
+  layer.appendChild(connG);
+
+  // ── Draw heading nodes ──
+  let maxX = 0, maxY = 0;
+
+  for (const node of visible) {
+    const colors = node.isTask
+      ? {bg: TASK_BG, border: TASK_BORDER, color: TASK_TEXT}
+      : getNodeColor(map, node);
+
+    // -- Heading foreignObject --
+    const fo = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
+    fo.setAttribute('x', node.x);
+    fo.setAttribute('y', node.y);
+    fo.setAttribute('width', NODE_W);
+    fo.setAttribute('height', NODE_H);
+
+    const div = document.createElement('div');
+    div.className = 'node-box';
+    div.style.cssText = `background:${colors.bg};border-color:${colors.border};color:${colors.color};height:${NODE_H}px;`;
+
+    // Label (double-click to edit)
+    const lbl = document.createElement('div');
+    lbl.className = 'node-label';
+    lbl.title = node.title;
+    lbl.textContent = node.title;
+    lbl.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      startInlineEdit(lbl, node, 'title', colors);
+    });
+    div.appendChild(lbl);
+
+    // task badge
+    if (node.isTask) {
+      const badge = document.createElement('div');
+      badge.className = 'node-type-badge';
+      badge.textContent = 'task';
+      badge.style.color = TASK_TEXT;
+      div.appendChild(badge);
+    }
+
+    // Body expand button (if has body)
+    if (node.body && node.body.length > 0) {
+      const bBtn = document.createElement('div');
+      bBtn.className = 'node-body-btn';
+      bBtn.title = node.bodyExpanded ? '收起正文' : '展开正文';
+      bBtn.textContent = node.bodyExpanded ? '▾' : '▸';
+      bBtn.style.color = colors.color;
+      bBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        node.bodyExpanded = !node.bodyExpanded;
+        drawMap();
+      });
+      div.appendChild(bBtn);
+    }
+
+    // Children collapse toggle
+    if (node.children.length > 0) {
+      const tog = document.createElement('div');
+      tog.className = 'node-toggle';
+      tog.textContent = node.collapsed ? '+' : '−';
+      tog.style.color = colors.color;
+      tog.addEventListener('click', (e) => {
+        e.stopPropagation();
+        node.collapsed = !node.collapsed;
+        drawMap();
+      });
+      div.appendChild(tog);
+    }
+
+    // Right click → context menu
+    div.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      ctxTarget = node;
+      showCtx(e.clientX, e.clientY);
+    });
+
+    fo.appendChild(div);
+    layer.appendChild(fo);
+
+    maxX = Math.max(maxX, node.x + NODE_W + 60);
+    maxY = Math.max(maxY, node.y + NODE_H + 60);
+
+    // -- Body node (rendered below heading as one box) --
+    if (hasVisibleBody(node)) {
+      const anchor = getBodyAnchor(node);
+      const bodyX = anchor.x;
+      const bodyY = anchor.y;
+      const bodyH = bodyBlockH(node);
+      const bColors = getBodyColor(map, node);
+      const bodyAbove = mapState.layoutMode === 'fishbone' && node._fishSide === -1;
+
+      // connector from heading to body box
+      const bc = document.createElementNS('http://www.w3.org/2000/svg','line');
+      bc.setAttribute('x1', node.x + NODE_W / 2);
+      bc.setAttribute('y1', bodyAbove ? node.y : node.y + NODE_H);
+      bc.setAttribute('x2', bodyX + BODY_W / 2);
+      bc.setAttribute('y2', bodyAbove ? bodyY + bodyH : bodyY);
+      bc.setAttribute('stroke', bColors.border);
+      bc.setAttribute('stroke-width', '1');
+      bc.setAttribute('stroke-dasharray', '4 3');
+      bc.setAttribute('opacity', '0.6');
+      layer.appendChild(bc);
+
+      const bfo = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
+      bfo.setAttribute('x', bodyX);
+      bfo.setAttribute('y', bodyY);
+      bfo.setAttribute('width', BODY_W);
+      bfo.setAttribute('height', bodyH);
+
+      const bdiv = document.createElement('div');
+      bdiv.style.cssText = `
+        display:flex;flex-direction:column;gap:${BODY_CONTENT_GAP}px;
+        background:${bColors.bg};border:1.5px solid ${bColors.border};
+        border-radius:6px;color:${bColors.color};
+        min-height:${bodyH}px;height:${bodyH}px;
+        padding:${BODY_BOX_PAD_Y}px ${BODY_BOX_PAD_X}px;
+        font-size:11px;font-family:'Noto Sans SC',sans-serif;
+        overflow:hidden;box-sizing:border-box;
+      `;
+
+      node.body.forEach((bItem, bi) => {
+        if (bItem.type === 'image') {
+          const imgBtn = document.createElement('button');
+          imgBtn.type = 'button';
+          imgBtn.style.cssText = `
+            display:flex;align-items:center;justify-content:space-between;gap:8px;
+            width:100%;height:${BODY_IMG_BTN_H}px;padding:0 10px;
+            border:1px solid ${bColors.border};border-radius:5px;
+            background:rgba(255,255,255,.5);color:${bColors.color};
+            font-size:11px;cursor:pointer;box-sizing:border-box;
+          `;
+          imgBtn.innerHTML = `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${bItem.alt || `图片 ${bi + 1}`}</span><span style="flex-shrink:0;">放大</span>`;
+          imgBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openLightbox(bItem.src, bItem.alt);
+          });
+          bdiv.appendChild(imgBtn);
+        } else {
+          const textBlock = document.createElement('div');
+          textBlock.style.cssText = 'white-space:normal;word-break:break-word;line-height:1.38;';
+          textBlock.textContent = bItem.content;
+          textBlock.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            startBodyInlineEdit(textBlock, node, bi, bColors);
+          });
+          bdiv.appendChild(textBlock);
+        }
+      });
+
+      bfo.appendChild(bdiv);
+      layer.appendChild(bfo);
+
+      maxX = Math.max(maxX, bodyX + BODY_W + 60);
+      maxY = Math.max(maxY, bodyY + bodyH + 60);
+    }
+  }
+
+  if (mapState.layoutMode === 'fishbone') {
+    roots.forEach(root => {
+      if (!root._fish) return;
+      maxX = Math.max(maxX, root._fish.spineEnd + 40);
+      maxY = Math.max(maxY, root._fish.sectionBottom + 20);
+    });
+  }
+
+  document.getElementById('map-svg').setAttribute('width',  maxX);
+  document.getElementById('map-svg').setAttribute('height', maxY);
+}
+
+// ── Inline edit: heading title ──
+function startInlineEdit(lbl, node, field, colors) {
+  const input = document.createElement('input');
+  input.value = node.title;
+  input.style.cssText = `
+    width:100%;border:none;outline:none;background:transparent;
+    color:${colors.color};font-size:12px;font-family:'Noto Sans SC',sans-serif;
+  `;
+  lbl.replaceWith(input);
+  input.focus(); input.select();
+
+  function commit() {
+    const val = input.value.trim();
+    if (val && val !== node.title) {
+      node.title = val;
+      syncNodeTitleToMd(node);
+    }
+    drawMap();
+  }
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { drawMap(); }
+  });
+}
+
+// ── Inline edit: body text item ──
+function startBodyInlineEdit(span, node, bodyIdx, colors) {
+  const item = node.body[bodyIdx];
+  const input = document.createElement('input');
+  input.value = item.content;
+  input.style.cssText = `
+    flex:1;border:none;outline:none;background:transparent;
+    color:${colors.color};font-size:11px;font-family:'Noto Sans SC',sans-serif;width:100%;
+  `;
+  span.replaceWith(input);
+  input.focus(); input.select();
+
+  function commit() {
+    const val = input.value.trim();
+    if (val !== item.content) {
+      item.content = val;
+      syncBodyToMd(node);
+    }
+    drawMap();
+  }
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { drawMap(); }
+  });
+}
+
+// ── Sync heading title back to Markdown ──
+// Strategy: find the N-th occurrence of headings at this level (by node.id order)
+function syncNodeTitleToMd(node) {
+  const editor = document.getElementById('md-editor');
+  const lines = editor.value.split('\n');
+  const prefix = '#'.repeat(node.level) + ' ';
+
+  // Count which occurrence of this level this node is (by traversal order in flat list)
+  const flatNodes = mapState.nodes;
+  const sameLevel = flatNodes.filter(n => n.level === node.level);
+  const nodeOccurrence = sameLevel.indexOf(node); // 0-based
+
+  // Walk through lines finding the N-th heading of this level
+  let occurrence = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(#{1,6})\s+(.+)/);
+    if (!m || m[1].length !== node.level) continue;
+    if (occurrence === nodeOccurrence) {
+      const raw = m[2];
+      const hasTask = /\[task\]/i.test(raw);
+      lines[i] = prefix + node.title + (hasTask ? ' [task]' : '');
+      break;
+    }
+    occurrence++;
+  }
+  editor.value = lines.join('\n');
+  localStorage.setItem('docFramework_md', editor.value);
+}
+
+// ── Sync body text back to Markdown ──
+function syncBodyToMd(node) {
+  const editor = document.getElementById('md-editor');
+  const lines = editor.value.split('\n');
+
+  // Find heading line by occurrence index
+  const flatNodes = mapState.nodes;
+  const sameLevel = flatNodes.filter(n => n.level === node.level);
+  const nodeOccurrence = sameLevel.indexOf(node);
+
+  let occurrence = 0;
+  let headingLineIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(#{1,6})\s+(.+)/);
+    if (!m || m[1].length !== node.level) continue;
+    if (occurrence === nodeOccurrence) { headingLineIdx = i; break; }
+    occurrence++;
+  }
+  if (headingLineIdx < 0) return;
+
+  // Find end of body (next heading of any level)
+  let bodyEnd = lines.length;
+  for (let i = headingLineIdx + 1; i < lines.length; i++) {
+    if (/^#{1,6}\s/.test(lines[i])) { bodyEnd = i; break; }
+  }
+
+  // Build new body lines
+  const newBodyLines = node.body.map(b =>
+    b.type === 'image' ? `![${b.alt}](${b.src})` : b.content
+  );
+
+  lines.splice(
+    headingLineIdx + 1,
+    bodyEnd - headingLineIdx - 1,
+    ...(newBodyLines.length > 0 ? ['', ...newBodyLines, ''] : [])
+  );
+
+  editor.value = lines.join('\n');
+  localStorage.setItem('docFramework_md', editor.value);
+}
+
+// ── Lightbox for image preview ──
+function openLightbox(src, alt) {
+  let lb = document.getElementById('lightbox');
+  if (!lb) {
+    lb = document.createElement('div');
+    lb.id = 'lightbox';
+    lb.style.cssText = `
+      position:fixed;inset:0;background:rgba(0,0,0,.75);
+      z-index:3000;display:flex;align-items:center;justify-content:center;
+      cursor:zoom-out;
+    `;
+    document.body.appendChild(lb);
+  }
+  lb.innerHTML = '';
+  const img = document.createElement('img');
+  img.src = src;
+  img.alt = alt || '';
+  img.style.cssText = 'max-width:88vw;max-height:88vh;border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,.5);';
+  lb.appendChild(img);
+  lb.style.display = 'flex';
+  lb.onclick = () => { lb.style.display = 'none'; };
+}
+
+function updateTransform() {
+  const svg = document.getElementById('map-svg');
+  svg.style.transform = `translate(${mapState.tx}px, ${mapState.ty}px) scale(${mapState.scale})`;
+}
+
+function resetView() {
+  mapState.scale = 0.9;
+  mapState.tx = 40;
+  mapState.ty = 40;
+  updateTransform();
+}
+
+function zoomIn() { mapState.scale = Math.min(2.5, mapState.scale * 1.2); updateTransform(); }
+function zoomOut() { mapState.scale = Math.max(0.2, mapState.scale / 1.2); updateTransform(); }
+
+function updateLayoutSwitch() {
+  document.querySelectorAll('#mapLayoutSwitch .map-layout-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.layout === mapState.layoutMode);
+  });
+}
+
+function setMapLayout(mode) {
+  if (mode !== 'mindmap' && mode !== 'fishbone') return;
+  mapState.layoutMode = mode;
+  localStorage.setItem('docFramework_layout', mode);
+  updateLayoutSwitch();
+  if (mapState.tree) {
+    drawMap();
+    resetView();
+  } else {
+    const text = document.getElementById('md-editor')?.value || '';
+    if (text.trim()) renderMap();
+  }
+}
+
+function expandAll() {
+  if (!mapState.tree) return;
+  Object.values(mapState.tree.map).forEach(n => {
+    n.collapsed = false;
+  });
+  drawMap();
+}
+
+function collapseToL2() {
+  if (!mapState.tree) return;
+  Object.values(mapState.tree.map).forEach(n => {
+    n.collapsed = n.level > 2;
+    if (n.body && n.body.length > 0) n.bodyExpanded = false;
+  });
+  drawMap();
+}
+
+// ══════════════════════════════════════════════
+//  PAN & ZOOM
+// ══════════════════════════════════════════════
+let drag = {active: false, startX: 0, startY: 0, startTx: 0, startTy: 0};
+
+document.getElementById('map-canvas').addEventListener('mousedown', (e) => {
+  if (e.target.closest('.node-box')) return;
+  drag.active = true;
+  drag.startX = e.clientX;
+  drag.startY = e.clientY;
+  drag.startTx = mapState.tx;
+  drag.startTy = mapState.ty;
+});
+document.addEventListener('mousemove', (e) => {
+  if (!drag.active) return;
+  mapState.tx = drag.startTx + e.clientX - drag.startX;
+  mapState.ty = drag.startTy + e.clientY - drag.startY;
+  updateTransform();
+});
+document.addEventListener('mouseup', () => { drag.active = false; });
+
+document.getElementById('map-canvas').addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const factor = e.deltaY > 0 ? 0.9 : 1.1;
+  mapState.scale = Math.min(2.5, Math.max(0.2, mapState.scale * factor));
+  updateTransform();
+}, {passive: false});
+
+// ══════════════════════════════════════════════
+//  CONTEXT MENU
+// ══════════════════════════════════════════════
+function showCtx(x, y) {
+  const m = document.getElementById('ctxMenu');
+  m.style.left = x + 'px';
+  m.style.top = y + 'px';
+  m.classList.add('open');
+}
+function hideCtx() { document.getElementById('ctxMenu').classList.remove('open'); }
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('#ctxMenu')) hideCtx();
+});
+
+function toggleNodeType() {
+  if (!ctxTarget) return;
+  ctxTarget.isTask = !ctxTarget.isTask;
+  // Sync back to markdown
+  syncTypeToMd(ctxTarget);
+  drawMap();
+  hideCtx();
+}
+
+function toggleCollapse() {
+  if (!ctxTarget || ctxTarget.children.length === 0) return;
+  ctxTarget.collapsed = !ctxTarget.collapsed;
+  drawMap();
+  hideCtx();
+}
+
+function syncTypeToMd(node) {
+  const editor = document.getElementById('md-editor');
+  const lines = editor.value.split('\n');
+
+  const flatNodes = mapState.nodes;
+  const sameLevel = flatNodes.filter(n => n.level === node.level);
+  const nodeOccurrence = sameLevel.indexOf(node);
+
+  let occurrence = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(#{1,6})\s+(.+)/);
+    if (!m || m[1].length !== node.level) continue;
+    if (occurrence === nodeOccurrence) {
+      if (node.isTask && !/\[task\]/i.test(lines[i])) {
+        lines[i] = lines[i].trimEnd() + ' [task]';
+      } else if (!node.isTask) {
+        lines[i] = lines[i].replace(/\[task\]/gi, '').trimEnd();
+      }
+      break;
+    }
+    occurrence++;
+  }
+  editor.value = lines.join('\n');
+  localStorage.setItem('docFramework_md', editor.value);
+}
+
+// ══════════════════════════════════════════════
+//  LIVE PREVIEW (debounced)
+// ══════════════════════════════════════════════
+let debTimer = null;
+document.getElementById('md-editor').addEventListener('input', () => {
+  clearTimeout(debTimer);
+  debTimer = setTimeout(() => {
+    if (mapState.nodes.length > 0) renderMap();
+  }, 400);
+});
+
+// ══════════════════════════════════════════════
+//  SPLITTER RESIZE
+// ══════════════════════════════════════════════
+const splitter = document.getElementById('splitter');
+const editorPanel = document.getElementById('editorPanel');
+let splitDrag = {active: false, startX: 0, startW: 0};
+splitter.addEventListener('mousedown', (e) => {
+  splitDrag.active = true;
+  splitDrag.startX = e.clientX;
+  splitDrag.startW = editorPanel.offsetWidth;
+});
+document.addEventListener('mousemove', (e) => {
+  if (!splitDrag.active) return;
+  const newW = Math.max(220, Math.min(600, splitDrag.startW + e.clientX - splitDrag.startX));
+  editorPanel.style.width = newW + 'px';
+  editorPanel.style.minWidth = newW + 'px';
+});
+document.addEventListener('mouseup', () => { splitDrag.active = false; });
+
+// ══════════════════════════════════════════════
+//  EXPORT MODAL
+// ══════════════════════════════════════════════
+const ALL_FIELDS = [
+  {key:'infoType',   label:'信息类型',     tag:'信息类型*',     alwaysOn:false, defaultOn:true,  valueType:'options', options:['Parent Map','Child Map','Concept','Task','Reference'], hint:''},
+  {key:'updateType', label:'更新类型',     tag:'更新类型*',     alwaysOn:false, defaultOn:false, valueType:'options', options:['New Map','New Topic','New Version','New Branch','Delete','Reuse'], defaultVal:'New Topic', hint:''},
+  {key:'version',    label:'版本',         tag:'版本*',         alwaysOn:false, defaultOn:true,  valueType:'input',   defaultVal:'1',                      hint:''},
+  {key:'aggregate',  label:'聚合',         tag:'聚合',          alwaysOn:false, defaultOn:false, valueType:'options', options:['新增的聚合','复用的聚合','更新的聚合'], defaultVal:'', hint:''},
+  {key:'keyPoints',  label:'章节要点',     tag:'章节要点*',     alwaysOn:false, defaultOn:false, valueType:'input',   defaultVal:'',                        hint:''},
+  {key:'competitor', label:'对应友商',     tag:'对应友商',      alwaysOn:false, defaultOn:false, valueType:'input',   defaultVal:'',                        hint:''},
+  {key:'compDetail', label:'友商借鉴内容', tag:'具体友商可借鉴内容', alwaysOn:false, defaultOn:false, valueType:'input', defaultVal:'',                   hint:''},
+  {key:'materials',  label:'需提供的素材', tag:'需提供的素材',  alwaysOn:false, defaultOn:false, valueType:'input',   defaultVal:'',                        hint:''},
+  {key:'matSource',  label:'素材提供方',   tag:'素材提供方',    alwaysOn:false, defaultOn:false, valueType:'input',   defaultVal:'',                        hint:''},
+  {key:'matProgress',label:'素材提供进度', tag:'素材提供进度',  alwaysOn:false, defaultOn:false, valueType:'input',   defaultVal:'',                        hint:''},
+  {key:'matLocation',label:'素材具体位置', tag:'素材具体位置',  alwaysOn:false, defaultOn:false, valueType:'input',   defaultVal:'',                        hint:''},
+  {key:'owner',      label:'中文责任人',   tag:'中文责任人',    alwaysOn:false, defaultOn:true,  valueType:'input',   defaultVal:'',                        hint:''},
+  {key:'progress',   label:'中文进度',     tag:'中文进度*',     alwaysOn:false, defaultOn:false, valueType:'options', options:['未开始','进行中','已完成','NA'], hint:''},
+  {key:'dueDate',    label:'中文完成日期', tag:'中文完成日期*', alwaysOn:false, defaultOn:false, valueType:'input',   defaultVal:'',                        hint:''},
+  {key:'remark',     label:'备注',         tag:'备注',          alwaysOn:false, defaultOn:false, valueType:'input',   defaultVal:'',                        hint:''},
+];
+
+const PRESETS = [
+  {label:'信息类型', key:'infoType'},
+  {label:'版本号', key:'version'},
+  {label:'责任人', key:'owner'},
+  {label:'更新类型', key:'updateType'},
+  {label:'章节要点', key:'keyPoints'},
+  {label:'中文进度', key:'progress'},
+];
+
+// Runtime state — persisted across modal opens within session
+let fieldState = [];
+let customKeyCounter = 0;
+
+function initFieldState() {
+  // Only init once per session; preserve state across re-opens
+  if (fieldState.length === 0) {
+    fieldState = ALL_FIELDS.map(f => ({
+      ...f,
+      isCustom: false,
+      enabled: f.defaultOn,
+      currentType: f.valueType,
+      value: f.defaultVal || '',
+      options: f.options ? [...f.options] : [],
+    }));
+  }
+}
+
+function openExportModal() {
+  initFieldState();
+  renderExportModal();
+  document.getElementById('exportModal').classList.add('open');
+}
+function closeExportModal() {
+  document.getElementById('exportModal').classList.remove('open');
+}
+
+// ── DRAG STATE ──
+let dragSrc = null;
+
+function renderExportModal() {
+  // ── Preset chips ──
+  const chipsEl = document.getElementById('presetChips');
+  chipsEl.innerHTML = '';
+  PRESETS.forEach(p => {
+    const fs = fieldState.find(f => f.key === p.key);
+    if (!fs) return;
+    const chip = document.createElement('div');
+    chip.className = 'preset-chip' + (fs.enabled ? ' active' : '');
+    chip.textContent = p.label;
+    chip.addEventListener('click', () => { fs.enabled = !fs.enabled; renderExportModal(); });
+    chipsEl.appendChild(chip);
+  });
+
+  // ── Field grid ──
+  const grid = document.getElementById('fieldGrid');
+  grid.innerHTML = '';
+
+  fieldState.forEach((fs, idx) => {
+    const row = buildFieldRow(fs, idx);
+    grid.appendChild(row);
+  });
+
+  // ── Add custom field button ──
+  const addBtn = document.createElement('button');
+  addBtn.className = 'add-field-btn';
+  addBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/></svg> 添加自定义字段`;
+  addBtn.addEventListener('click', () => addCustomField(grid));
+  grid.appendChild(addBtn);
+}
+
+function buildFieldRow(fs, idx) {
+  const row = document.createElement('div');
+  row.className = 'field-row';
+  row.style.cssText = 'display:flex;align-items:stretch;border-radius:7px;border:1.5px solid var(--border);background:var(--bg2);overflow:hidden;margin-bottom:0;';
+  row.draggable = true;
+
+  // ── Drag handle ──
+  const handle = document.createElement('div');
+  handle.className = 'drag-handle';
+  handle.title = '拖拽排序';
+  handle.innerHTML = '⠿';
+  row.appendChild(handle);
+
+  // ── Checkbox ──
+  const cbWrap = document.createElement('div');
+  cbWrap.className = 'field-check-wrap';
+  const cb = document.createElement('input');
+  cb.type = 'checkbox'; cb.className = 'field-check'; cb.checked = fs.enabled;
+  cb.addEventListener('change', () => { fs.enabled = cb.checked; renderExportModal(); });
+  cbWrap.appendChild(cb);
+  row.appendChild(cbWrap);
+
+  // ── Label area ──
+  const labelArea = document.createElement('div');
+  labelArea.className = 'field-label-area';
+  const nameEl = document.createElement('div');
+  nameEl.className = 'field-name';
+  nameEl.textContent = fs.label;
+  labelArea.appendChild(nameEl);
+  const tagEl = document.createElement('span');
+  tagEl.className = fs.isCustom ? 'field-custom-tag' : 'field-tag';
+  tagEl.textContent = fs.isCustom ? '自定义' : (fs.tag || fs.label);
+  labelArea.appendChild(tagEl);
+  row.appendChild(labelArea);
+
+  // ── Config area ──
+  const configArea = document.createElement('div');
+  configArea.className = 'field-config-area' + (fs.enabled ? '' : ' collapsed');
+
+  // Type selector row
+  const cfgRow1 = document.createElement('div');
+  cfgRow1.className = 'field-config-row';
+  const typeLabel = document.createElement('span');
+  typeLabel.style.cssText = 'font-size:10px;color:var(--text3);white-space:nowrap;';
+  typeLabel.textContent = '值类型：';
+  cfgRow1.appendChild(typeLabel);
+  const typeSel = document.createElement('select');
+  typeSel.className = 'field-type-select';
+  [['input','手动输入'],['options','选项列表']].forEach(([v,l]) => {
+    const o = document.createElement('option');
+    o.value = v; o.textContent = l;
+    if (v === fs.currentType) o.selected = true;
+    typeSel.appendChild(o);
+  });
+  typeSel.addEventListener('change', () => { fs.currentType = typeSel.value; renderExportModal(); });
+  cfgRow1.appendChild(typeSel);
+  configArea.appendChild(cfgRow1);
+
+  if (fs.currentType === 'input') {
+    // Single default value input
+    const cfgRow2 = document.createElement('div');
+    cfgRow2.className = 'field-config-row';
+    const inp = document.createElement('input');
+    inp.className = 'field-input';
+    inp.placeholder = '默认值（留空则导出时置空）';
+    inp.value = fs.value;
+    inp.addEventListener('input', () => { fs.value = inp.value; });
+    cfgRow2.appendChild(inp);
+    configArea.appendChild(cfgRow2);
+  } else {
+    // Options list editor
+    const oe = document.createElement('div');
+    oe.className = 'options-editor';
+    fs.options.forEach((opt, oi) => {
+      const or = document.createElement('div');
+      or.className = 'option-row';
+      const oinp = document.createElement('input');
+      oinp.placeholder = `选项 ${oi + 1}`;
+      oinp.value = opt;
+      oinp.addEventListener('input', () => { fs.options[oi] = oinp.value; });
+      const odl = document.createElement('button');
+      odl.className = 'opt-del-btn'; odl.textContent = '×';
+      odl.addEventListener('click', () => { fs.options.splice(oi, 1); renderExportModal(); });
+      or.appendChild(oinp); or.appendChild(odl);
+      oe.appendChild(or);
+    });
+    const addOptBtn = document.createElement('button');
+    addOptBtn.className = 'add-option-btn'; addOptBtn.textContent = '+ 添加选项';
+    addOptBtn.addEventListener('click', () => { fs.options.push(''); renderExportModal(); });
+    oe.appendChild(addOptBtn);
+
+    // Default value selector
+    if (fs.options.filter(o => o).length > 0) {
+      const defRow = document.createElement('div');
+      defRow.className = 'field-config-row';
+      defRow.style.marginTop = '2px';
+      const defLabel = document.createElement('span');
+      defLabel.className = 'def-sel-label'; defLabel.textContent = '默认值：';
+      defRow.appendChild(defLabel);
+      const defSel = document.createElement('select');
+      defSel.className = 'field-type-select'; defSel.style.flex = '1';
+      const emptyOpt = document.createElement('option');
+      emptyOpt.value = ''; emptyOpt.textContent = '— 留空 —';
+      defSel.appendChild(emptyOpt);
+      fs.options.filter(o => o).forEach(o => {
+        const op = document.createElement('option');
+        op.value = o; op.textContent = o;
+        if (o === fs.value) op.selected = true;
+        defSel.appendChild(op);
+      });
+      defSel.addEventListener('change', () => { fs.value = defSel.value; });
+      defRow.appendChild(defSel);
+      oe.appendChild(defRow);
+    }
+    configArea.appendChild(oe);
+  }
+  row.appendChild(configArea);
+
+  // ── Delete button (custom fields only) ──
+  if (fs.isCustom) {
+    const delBtn = document.createElement('button');
+    delBtn.className = 'field-del-btn'; delBtn.title = '删除此字段'; delBtn.textContent = '✕';
+    delBtn.addEventListener('click', () => {
+      fieldState.splice(fieldState.indexOf(fs), 1);
+      renderExportModal();
+    });
+    row.appendChild(delBtn);
+  }
+
+  // ── Drag & drop ──
+  row.addEventListener('dragstart', (e) => {
+    dragSrc = idx;
+    e.dataTransfer.effectAllowed = 'move';
+    setTimeout(() => row.classList.add('dragging'), 0);
+  });
+  row.addEventListener('dragend', () => {
+    row.classList.remove('dragging');
+    document.querySelectorAll('.field-row').forEach(r => r.classList.remove('drag-over'));
+  });
+  row.addEventListener('dragover', (e) => {
+    e.preventDefault(); e.dataTransfer.dropEffect = 'move';
+    row.classList.add('drag-over');
+  });
+  row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+  row.addEventListener('drop', (e) => {
+    e.preventDefault();
+    row.classList.remove('drag-over');
+    if (dragSrc === null || dragSrc === idx) return;
+    const moved = fieldState.splice(dragSrc, 1)[0];
+    const targetIdx = dragSrc < idx ? idx - 1 : idx;
+    fieldState.splice(targetIdx, 0, moved);
+    dragSrc = null;
+    renderExportModal();
+  });
+
+  return row;
+}
+
+function addCustomField(grid) {
+  // Insert an inline form before the add button
+  const existing = grid.querySelector('.new-field-row');
+  if (existing) { existing.querySelector('input').focus(); return; }
+
+  const newRow = document.createElement('div');
+  newRow.className = 'new-field-row';
+
+  const inp = document.createElement('input');
+  inp.placeholder = '输入字段名称（如：英文责任人）';
+  newRow.appendChild(inp);
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.className = 'new-field-confirm'; confirmBtn.textContent = '添加';
+  confirmBtn.addEventListener('click', () => {
+    const name = inp.value.trim();
+    if (!name) { inp.focus(); return; }
+    fieldState.push({
+      key: 'custom_' + (++customKeyCounter),
+      label: name, tag: name,
+      isCustom: true,
+      alwaysOn: false, defaultOn: true,
+      enabled: true,
+      currentType: 'input',
+      valueType: 'input',
+      value: '',
+      options: [],
+    });
+    renderExportModal();
+  });
+  newRow.appendChild(confirmBtn);
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'new-field-cancel'; cancelBtn.textContent = '取消';
+  cancelBtn.addEventListener('click', () => newRow.remove());
+  newRow.appendChild(cancelBtn);
+
+  grid.insertBefore(newRow, grid.querySelector('.add-field-btn'));
+  inp.focus();
+
+  inp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') confirmBtn.click();
+    if (e.key === 'Escape') cancelBtn.click();
+  });
+}
+
+// ══════════════════════════════════════════════
+//  EXCEL EXPORT — 三页签
+// ══════════════════════════════════════════════
+
+// ── 通用样式工厂 ──
+function makeStyle(opts = {}) {
+  const border = {
+    top:    {style:'thin', color:{rgb:'CCCCCC'}},
+    bottom: {style:'thin', color:{rgb:'CCCCCC'}},
+    left:   {style:'thin', color:{rgb:'CCCCCC'}},
+    right:  {style:'thin', color:{rgb:'CCCCCC'}},
+  };
+  return {
+    font:      {name:'Arial', sz: opts.sz||10, bold:!!opts.bold, color:{rgb: opts.color||'333333'}},
+    fill:      opts.bg ? {patternType:'solid', fgColor:{rgb: opts.bg}} : {patternType:'none'},
+    alignment: {horizontal: opts.align||'left', vertical:'center', wrapText:!!opts.wrap},
+    border,
+  };
+}
+
+// 写单元格
+function wc(ws, r, c, v, style) {
+  const ref = XLSX.utils.encode_cell({r, c});
+  ws[ref] = {v: v ?? '', t: typeof v === 'number' ? 'n' : 's', s: style};
+}
+
+// 设置合并单元格
+function merge(ws, r1, c1, r2, c2) {
+  if (!ws['!merges']) ws['!merges'] = [];
+  ws['!merges'].push({s:{r:r1,c:c1}, e:{r:r2,c:c2}});
+}
+
+// 设置 ws 范围
+function setRef(ws, maxR, maxC) {
+  ws['!ref'] = XLSX.utils.encode_range({s:{r:0,c:0}, e:{r:maxR,c:maxC}});
+}
+
+// ── 颜色常量（对齐附件风格） ──
+const C = {
+  headerDark:  '2D2420',   // 深棕表头
+  headerMid:   '5C4030',   // 中棕次级表头
+  headerLight: 'E8DDD0',   // 浅米色区块标题
+  noteRed:     'C0392B',   // 说明红字
+  noteGray:    '888888',   // 示例灰字
+  bodyBg:      'FAFAF8',   // 内容区底色
+  altBg:       'F2EDE6',   // 交替行底色
+  white:       'FFFFFF',
+  black:       '000000',
+};
+
+// ══════════════════════════════════════════════
+//  SHEET 1：内容策略
+// ══════════════════════════════════════════════
+function buildSheetContentStrategy() {
+  const ws = {};
+  let r = 0;
+
+  const sTitle  = makeStyle({bold:true, sz:11, color:C.white,  bg:C.headerDark,  align:'center'});
+  const sNote   = makeStyle({sz:9,  color:C.noteRed,  bg:C.headerLight});
+  const sSecHd  = makeStyle({bold:true, sz:10, color:C.white,  bg:C.headerMid,  align:'left'});
+  const sThHd   = makeStyle({bold:true, sz:10, color:C.white,  bg:C.headerDark, align:'center'});
+  const sLabel  = makeStyle({bold:true, sz:10, color:'333333', bg:C.headerLight});
+  const sVal    = makeStyle({sz:10, color:'333333', bg:C.bodyBg, wrap:true});
+  const sValAlt = makeStyle({sz:10, color:'333333', bg:C.altBg,  wrap:true});
+  const sStar   = makeStyle({bold:true, sz:10, color:C.noteRed, bg:C.headerLight});
+  const sEmpty  = makeStyle({sz:10, bg:C.bodyBg});
+
+  // 顶部说明行
+  wc(ws, r, 0, '带*的为无条件必填项，不带的选填。红字为填写说明，灰字为填写示例。', sNote);
+  merge(ws, r, 0, r, 7); r++;
+
+  // ── 基本信息 ──
+  wc(ws, r, 0, '基本信息*', sSecHd); merge(ws, r, 0, r, 7); r++;
+  [
+    ['产品名称*', ''],
+    ['资料属性*', ''],
+    ['需要的资料类型*', ''],
+    ['资料受众分析*', ''],
+  ].forEach(([lbl]) => {
+    wc(ws, r, 0, lbl, sStar);
+    wc(ws, r, 1, '', sVal); merge(ws, r, 1, r, 7); r++;
+  });
+
+  // 资料属性选项
+  const attrOpts = ['标配', '中性'];
+  attrOpts.forEach((o, i) => {
+    wc(ws, r, 0, '', sEmpty);
+    wc(ws, r, 1, o, i%2===0 ? sVal : sValAlt);
+    merge(ws, r, 1, r, 7); r++;
+  });
+
+  // 资料类型选项
+  const typeOpts = ['用户手册','软件安装指南','SDK开发指南（任何情况均仅提供中性版本）','算子开发指南（任何情况均仅提供中性版本）','硬件快速操作指南（含纸质说明书）'];
+  typeOpts.forEach((o, i) => {
+    wc(ws, r, 0, '', sEmpty);
+    wc(ws, r, 1, o, i%2===0 ? sVal : sValAlt);
+    merge(ws, r, 1, r, 7); r++;
+  });
+
+  // ── 受众分析表 ──
+  wc(ws, r, 0, '资料受众分析*', sSecHd); merge(ws, r, 0, r, 7); r++;
+  wc(ws, r, 0, '受众类型*', sThHd);
+  wc(ws, r, 1, '资料需求*', sThHd); merge(ws, r, 1, r, 7); r++;
+  const audiences = ['工业控制工程师','系统集成商','电气工程师','机械设备维修人员'];
+  audiences.forEach((a, i) => {
+    wc(ws, r, 0, a, i%2===0 ? sVal : sValAlt);
+    wc(ws, r, 1, '', i%2===0 ? sVal : sValAlt); merge(ws, r, 1, r, 7); r++;
+  });
+
+  // ── 竞品分析 ──
+  wc(ws, r, 0, '竞品资料分析（全新产品的文档或者改版优化文档必须填写）', sSecHd); merge(ws, r, 0, r, 7); r++;
+  const compHds = ['对标竞品','文档链接','可借鉴要点','竞品文档不足&不可借鉴之处','竞品分析报告地址','三家整体的感受','说明'];
+  compHds.forEach((h, i) => wc(ws, r, i, h, sThHd)); r++;
+  for (let i = 0; i < 3; i++) {
+    compHds.forEach((_, ci) => wc(ws, r, ci, '', i%2===0 ? sVal : sValAlt)); r++;
+  }
+
+  // ── 资料投放分析 ──
+  wc(ws, r, 0, '资料投放分析*', sSecHd); merge(ws, r, 0, r, 7); r++;
+  wc(ws, r, 0, '资料传递渠道*', sStar);
+  wc(ws, r, 1, '（填写资料的传递渠道，包括但不限于PIS、WPP、Hikrobot官网下载中心等）', sNote);
+  merge(ws, r, 1, r, 7); r++;
+  const channels = ['打包在软件压缩包中','纸质文档（置于产品包装内）','上传WPP作为在线文档','软件的【关于】>【帮助】选项中嵌入离线版HTML文档','软件功能界面嵌入对应的HTML文件','上传PIS','上传Hikrobot官网下载中心','其他'];
+  channels.forEach((ch, i) => {
+    wc(ws, r, 0, '', sEmpty);
+    wc(ws, r, 1, ch, i%2===0 ? sVal : sValAlt); merge(ws, r, 1, r, 7); r++;
+  });
+  wc(ws, r, 0, '资料推广策略', sLabel);
+  wc(ws, r, 1, '', sVal); merge(ws, r, 1, r, 7); r++;
+
+  // ── 用户旅程 ──
+  wc(ws, r, 0, '用户旅程分析（按需填写）', sSecHd); merge(ws, r, 0, r, 7); r++;
+  wc(ws, r, 0, '云文档地址', sLabel);
+  wc(ws, r, 1, '', sVal); merge(ws, r, 1, r, 7); r++;
+
+  // 列宽
+  ws['!cols'] = [
+    {wch:22},{wch:30},{wch:20},{wch:28},{wch:22},{wch:20},{wch:18},{wch:16}
+  ];
+  ws['!rows'] = Array(r).fill({hpt:20});
+  setRef(ws, r-1, 7);
+  return ws;
+}
+
+// ══════════════════════════════════════════════
+//  SHEET 2：复用策略
+// ══════════════════════════════════════════════
+function buildSheetReuseStrategy() {
+  const ws = {};
+  let r = 0;
+
+  const sTitle  = makeStyle({bold:true, sz:11, color:C.white,  bg:C.headerDark, align:'center'});
+  const sNote   = makeStyle({sz:9,  color:C.noteRed, bg:C.headerLight});
+  const sSecHd  = makeStyle({bold:true, sz:10, color:C.white,  bg:C.headerMid,  align:'left'});
+  const sThHd   = makeStyle({bold:true, sz:10, color:C.white,  bg:C.headerDark, align:'center'});
+  const sVal    = makeStyle({sz:10, color:'333333', bg:C.bodyBg, wrap:true});
+  const sValAlt = makeStyle({sz:10, color:'333333', bg:C.altBg,  wrap:true});
+  const sLabel  = makeStyle({bold:true, sz:10, color:'333333', bg:C.headerLight});
+  const sEmpty  = makeStyle({sz:10, bg:C.bodyBg});
+
+  // 顶部说明
+  wc(ws, r, 0, '带*的为无条件必填项，不带的选填。红字为填写说明，灰字为填写示例。', sNote);
+  merge(ws, r, 0, r, 8); r++;
+
+  // ── 整体复用策略 ──
+  wc(ws, r, 0, '整体复用策略*', sSecHd); merge(ws, r, 0, r, 8); r++;
+  wc(ws, r, 0, '', sVal); merge(ws, r, 0, r+2, 8); r += 3;
+
+  // ── Variable ──
+  wc(ws, r, 0, 'Variable（若使用了变量，此表格必填；未使用则隐藏）', sSecHd); merge(ws, r, 0, r, 8); r++;
+  wc(ws, r, 0, '源路径：', sLabel); merge(ws, r, 0, r, 8); r++;
+  const varHds = ['Topic名称','更新需求来源','更新类型','版本','更新要点','需插入变量的场景'];
+  varHds.forEach((h, i) => wc(ws, r, i, h, sThHd)); r++;
+  for (let i = 0; i < 3; i++) {
+    varHds.forEach((_, ci) => wc(ws, r, ci, '', i%2===0 ? sVal : sValAlt)); r++;
+  }
+
+  // ── Condition ──
+  wc(ws, r, 0, 'Condition（若使用了Document type以外的条件，此表格必填；未使用则隐藏）', sSecHd); merge(ws, r, 0, r, 8); r++;
+  const condHds = ['Condition','对应场景','对应设置'];
+  condHds.forEach((h, i) => wc(ws, r, i, h, sThHd)); r++;
+  for (let i = 0; i < 3; i++) {
+    condHds.forEach((_, ci) => wc(ws, r, ci, '', i%2===0 ? sVal : sValAlt)); r++;
+  }
+
+  // ── Conref ──
+  wc(ws, r, 0, 'Conref（若使用了Conref，此表格必填；未使用则隐藏）', sSecHd); merge(ws, r, 0, r, 8); r++;
+  wc(ws, r, 0, '源路径：', sLabel); merge(ws, r, 0, r, 8); r++;
+  const conrefHds = ['源topic','类型','更新需求来源','更新类型','版本','更新要点','责任人','Conref使用场景','topic源路径'];
+  conrefHds.forEach((h, i) => wc(ws, r, i, h, sThHd)); r++;
+  for (let i = 0; i < 4; i++) {
+    conrefHds.forEach((_, ci) => wc(ws, r, ci, '', i%2===0 ? sVal : sValAlt)); r++;
+  }
+
+  // ── 图片命名规则 ──
+  wc(ws, r, 0, '图片命名规则', sLabel);
+  wc(ws, r, 1, 'ch/en/bi_icon/image/gif/video_自定义命名（image也可以用img替代）', sVal);
+  merge(ws, r, 1, r, 8); r++;
+
+  // 列宽
+  ws['!cols'] = [
+    {wch:28},{wch:16},{wch:16},{wch:12},{wch:10},{wch:30},{wch:14},{wch:30},{wch:30}
+  ];
+  ws['!rows'] = Array(r).fill({hpt:20});
+  setRef(ws, r-1, 8);
+  return ws;
+}
+
+// ══════════════════════════════════════════════
+//  SHEET 3：用户手册开发框架
+// ══════════════════════════════════════════════
+function buildSheetFramework(nodes, enabledFields) {
+  const ws = {};
+
+  // 固定目录列
+  const dirCols = ['Map','一级目录','二级目录','三级目录','四级目录','五级目录'];
+
+  // 完整列头（对齐附件所有列，但只有 enabledFields 里的才填值）
+  // 附件固定顺序：目录列 → 信息类型 → 更新类型 → 版本 → 聚合 → 章节要点 → 对应友商 →
+  //              具体友商可借鉴内容 → 需提供的素材 → 素材提供方 → 素材提供进度 →
+  //              素材具体位置 → 中文责任人 → 中文进度 → 中文完成日期 → 备注
+  const FIXED_EXTRA_COLS = [
+    {key:'infoType',    label:'信息类型'},
+    {key:'updateType',  label:'更新类型'},
+    {key:'version',     label:'版本'},
+    {key:'aggregate',   label:'聚合'},
+    {key:'keyPoints',   label:'章节要点'},
+    {key:'competitor',  label:'对应友商'},
+    {key:'compDetail',  label:'具体友商可借鉴内容'},
+    {key:'materials',   label:'需提供的素材'},
+    {key:'matSource',   label:'素材提供方'},
+    {key:'matProgress', label:'素材提供进度'},
+    {key:'matLocation', label:'素材具体位置'},
+    {key:'owner',       label:'中文责任人'},
+    {key:'progress',    label:'中文进度'},
+    {key:'dueDate',     label:'中文完成日期'},
+    {key:'remark',      label:'备注'},
+  ];
+
+  // 自定义字段附在最后
+  const customFields = enabledFields.filter(f => f.isCustom);
+  const allExtraCols = [...FIXED_EXTRA_COLS, ...customFields.map(f => ({key:f.key, label:f.label}))];
+  const allHeaders   = [...dirCols, ...allExtraCols.map(c => c.label)];
+  const totalCols    = allHeaders.length;
+
+  // enabledFields map
+  const enabledMap = {};
+  enabledFields.forEach(f => { enabledMap[f.key] = f; });
+
+  // 样式
+  const sHdr = makeStyle({bold:true, sz:10, color:C.white, bg:C.headerDark, align:'center'});
+  const sHdrDir = makeStyle({bold:true, sz:10, color:C.white, bg:C.headerDark, align:'center'});
+  const sMap  = makeStyle({bold:true, sz:10, color:C.white, bg:'4A3728', align:'left'});
+  const sEven = makeStyle({sz:10, color:'333333', bg:C.bodyBg, wrap:true});
+  const sOdd  = makeStyle({sz:10, color:'333333', bg:C.altBg,  wrap:true});
+  const sDirE = makeStyle({sz:10, color:'333333', bg:'EAE4DC'});
+  const sDirO = makeStyle({sz:10, color:'333333', bg:'DDD5C8'});
+
+  // 表头行
+  allHeaders.forEach((h, ci) => wc(ws, 0, ci, h, ci < 6 ? sHdrDir : sHdr));
+
+  // 数据行
+  let dataRowIdx = 0;
+  nodes.forEach((node) => {
+    const r = dataRowIdx + 1;
+    const isEven = dataRowIdx % 2 === 0;
+    const sBody = isEven ? sEven : sOdd;
+    const sDir  = isEven ? sDirE : sDirO;
+
+    // 目录列：只在对应层级填标题
+    dirCols.forEach((col, ci) => {
+      const lvl = ci + 1;
+      wc(ws, r, ci, node.level === lvl ? node.title : '', node.level === 1 ? sMap : sDir);
+    });
+
+    // 额外列
+    allExtraCols.forEach((col, ei) => {
+      const ci = 6 + ei;
+      const fs = enabledMap[col.key];
+      let val = '';
+      if (fs) {
+        if (col.key === 'infoType') {
+          val = node.isTask
+            ? (fs.options.find(o => /task/i.test(o)) || 'Task')
+            : (fs.options.find(o => /concept/i.test(o)) || 'Concept');
+        } else {
+          val = fs.value || '';
+        }
+      }
+      wc(ws, r, ci, val, node.level === 1 ? sMap : sBody);
+    });
+
+    dataRowIdx++;
+  });
+
+  // 列宽
+  ws['!cols'] = allHeaders.map((h, i) => {
+    if (i < 6) return {wch: 22};
+    const baseW = Math.max(14, Math.min(30, h.length * 2.0));
+    return {wch: baseW};
+  });
+
+  // 行高（表头高一点）
+  const rowHeights = [{hpt:24}]; // 表头
+  nodes.forEach(() => rowHeights.push({hpt:18}));
+  ws['!rows'] = rowHeights;
+
+  // 冻结首行
+  ws['!freeze'] = {xSplit:0, ySplit:1, topLeftCell:'A2', activePane:'bottomLeft', state:'frozen'};
+
+  setRef(ws, nodes.length, totalCols - 1);
+  return ws;
+}
+
+// ══════════════════════════════════════════════
+//  主导出函数
+// ══════════════════════════════════════════════
+function doExport() {
+  const text = document.getElementById('md-editor').value;
+  const nodes = parseMd(text);
+  if (nodes.length === 0) { showToast('请先输入 Markdown 内容'); return; }
+
+  const enabledFields = fieldState.filter(f => f.enabled);
+
+  try {
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1 — 内容策略
+    const ws1 = buildSheetContentStrategy();
+    XLSX.utils.book_append_sheet(wb, ws1, '内容策略');
+
+    // Sheet 2 — 复用策略
+    const ws2 = buildSheetReuseStrategy();
+    XLSX.utils.book_append_sheet(wb, ws2, '复用策略');
+
+    // Sheet 3 — 用户手册开发框架
+    const ws3 = buildSheetFramework(nodes, enabledFields);
+    XLSX.utils.book_append_sheet(wb, ws3, '用户手册开发框架');
+
+    XLSX.writeFile(wb, '文档框架.xlsx');
+    closeExportModal();
+    showToast('已导出 文档框架.xlsx（3个页签）✓');
+  } catch(e) {
+    console.error(e);
+    showToast('导出失败：' + e.message);
+  }
+}
+
+// ══════════════════════════════════════════════
+//  EXCELJS EXPORT OVERRIDE
+// ══════════════════════════════════════════════
+const REF_FRAMEWORK_WIDTHS = [
+  9.7, 11.875, 13.8833333333333, 21.4583333333333, 12.1083333333333,
+  13.05, 11.9833333333333, 14.1416666666667, 7.03333333333333, 8.58333333333333,
+  48.2333333333333, 8.975, 19.3916666666667, 15.1416666666667, 14.025,
+  12.0, 15.5416666666667, 10.3916666666667, 10.2833333333333, 14.175, 21.5416666666667
+];
+const REF_CONTENT_WIDTHS = [19.0, 10.5583333333333, 31.0083333333333, 37.9083333333333, 21.2416666666667, 35.7333333333333, 36.8083333333333, 21.1083333333333, 19.5083333333333];
+const REF_REUSE_WIDTHS = [13.075, 14.4583333333333, 12.9083333333333, 10.875, 5.25, 37.2416666666667, 9.60833333333333, 22.55, 17.25];
+const EXCEL_FONT_NAME = '微软雅黑';
+const EXCEL_BORDER = {
+  top: {style: 'thin', color: {argb: 'FF000000'}},
+  left: {style: 'thin', color: {argb: 'FF000000'}},
+  bottom: {style: 'thin', color: {argb: 'FF000000'}},
+  right: {style: 'thin', color: {argb: 'FF000000'}},
+};
+
+function excelArgb(rgb) {
+  if (!rgb) return undefined;
+  const clean = String(rgb).replace('#', '').toUpperCase();
+  if (clean.length === 8) return clean;
+  if (clean.length === 6) return 'FF' + clean;
+  return undefined;
+}
+
+function excelColName(index) {
+  let n = index;
+  let s = '';
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+function setExcelCell(cell, value, style = {}) {
+  cell.value = value === undefined ? '' : value;
+  if (style.font) cell.font = style.font;
+  if (style.fill) cell.fill = style.fill;
+  if (style.alignment) cell.alignment = style.alignment;
+  if (style.border) cell.border = style.border;
+  if (style.numFmt) cell.numFmt = style.numFmt;
+}
+
+function styleRegion(ws, r1, c1, r2, c2, style, value) {
+  for (let r = r1; r <= r2; r++) {
+    for (let c = c1; c <= c2; c++) {
+      setExcelCell(ws.getCell(r, c), '', style);
+    }
+  }
+  if (r1 !== r2 || c1 !== c2) ws.mergeCells(r1, c1, r2, c2);
+  if (value !== undefined) ws.getCell(r1, c1).value = value;
+}
+
+function legacyStyleToExcel(style = {}, sheetKind = 'generic') {
+  const fill = style.fill && style.fill.fgColor ? excelArgb(style.fill.fgColor.rgb) : undefined;
+  const fontColor = style.font && style.font.color ? excelArgb(style.font.color.rgb) : undefined;
+  const out = {
+    font: {
+      name: EXCEL_FONT_NAME,
+      sz: style.font && style.font.sz ? style.font.sz : 10,
+      bold: !!(style.font && style.font.bold),
+      italic: !!(style.font && style.font.italic),
+      color: {argb: fontColor || 'FF000000'},
+    },
+    alignment: {
+      horizontal: (style.alignment && style.alignment.horizontal) || 'left',
+      vertical: (style.alignment && style.alignment.vertical) || 'center',
+      wrapText: !!(style.alignment && style.alignment.wrapText),
+    },
+    border: EXCEL_BORDER,
+  };
+
+  if (sheetKind !== 'framework') {
+    if (fontColor === 'FFC0392B' || fontColor === 'FFC00000') {
+      out.font.color = {argb: 'FFC00000'};
+      out.fill = undefined;
+      return out;
+    }
+    if (fill === 'FF2D2420' || fill === 'FF5C4030') {
+      out.font = {name: EXCEL_FONT_NAME, sz: 11, bold: true, color: {argb: 'FF000000'}};
+      out.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: 'FF9DC3E6'}};
+      return out;
+    }
+    if (fill === 'FFE8DDD0') {
+      out.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: 'FFF2F2F2'}};
+      if (fontColor === 'FFC0392B') out.fill = undefined;
+      return out;
+    }
+    if (fill === 'FFFAFAF8' || fill === 'FFF2EDE6') {
+      out.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: 'FFFFFFFF'}};
+      return out;
+    }
+  }
+
+  if (sheetKind === 'framework') {
+    if (fill === 'FF2D2420') {
+      out.font = {name: EXCEL_FONT_NAME, sz: 11, bold: true, color: {argb: 'FF000000'}};
+      out.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: 'FF9DC3E6'}};
+      return out;
+    }
+    if (fill === 'FF4A3728') {
+      out.font = {name: EXCEL_FONT_NAME, sz: 11, bold: false, color: {argb: 'FF000000'}};
+      out.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: 'FFDEEBF7'}};
+      return out;
+    }
+    if (fill === 'FFEAE4DC' || fill === 'FFDDD5C8' || fill === 'FFFAFAF8' || fill === 'FFF2EDE6') {
+      out.font = {name: EXCEL_FONT_NAME, sz: 11, bold: false, color: {argb: 'FF000000'}};
+      out.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: 'FFFFFFFF'}};
+      return out;
+    }
+  }
+
+  if (fill) out.fill = {type: 'pattern', pattern: 'solid', fgColor: {argb: fill}};
+  return out;
+}
+
+function copyLegacySheetToExcel(legacy, ws, kind, widths) {
+  const range = XLSX.utils.decode_range(legacy['!ref']);
+  for (let c = 0; c <= range.e.c; c++) {
+    const width = widths && widths[c] ? widths[c] : (legacy['!cols'] && legacy['!cols'][c] && legacy['!cols'][c].wch) || 12;
+    ws.getColumn(c + 1).width = width;
+  }
+  if (legacy['!rows']) {
+    legacy['!rows'].forEach((row, idx) => {
+      if (row && row.hpt) ws.getRow(idx + 1).height = row.hpt;
+    });
+  }
+
+  for (let r = 0; r <= range.e.r; r++) {
+    for (let c = 0; c <= range.e.c; c++) {
+      const ref = XLSX.utils.encode_cell({r, c});
+      const src = legacy[ref];
+      if (!src) continue;
+      const cell = ws.getCell(r + 1, c + 1);
+      cell.value = src.v;
+      const mapped = legacyStyleToExcel(src.s || {}, kind);
+      setExcelCell(cell, src.v, mapped);
+    }
+  }
+
+  (legacy['!merges'] || []).forEach(m => {
+    ws.mergeCells(m.s.r + 1, m.s.c + 1, m.e.r + 1, m.e.c + 1);
+  });
+}
+
+function frameworkHeaderStyle() {
+  return {
+    font: {name: EXCEL_FONT_NAME, sz: 11, bold: true, color: {argb: 'FF000000'}},
+    fill: {type: 'pattern', pattern: 'solid', fgColor: {argb: 'FF9DC3E6'}},
+    alignment: {horizontal: 'left', vertical: 'center', wrapText: true},
+    border: EXCEL_BORDER,
+  };
+}
+
+function frameworkBodyStyle(isMapRow) {
+  return {
+    font: {name: EXCEL_FONT_NAME, sz: 11, color: {argb: 'FF000000'}},
+    fill: {type: 'pattern', pattern: 'solid', fgColor: {argb: isMapRow ? 'FFDEEBF7' : 'FFFFFFFF'}},
+    alignment: {horizontal: 'left', vertical: 'center', wrapText: true},
+    border: EXCEL_BORDER,
+  };
+}
+
+function buildFrameworkOptionSheet(workbook, columns) {
+  const optionColumns = columns.filter(col => col.fs && col.fs.currentType === 'options' && col.fs.options.filter(Boolean).length > 0);
+  if (optionColumns.length === 0) return {};
+
+  const ws = workbook.addWorksheet('选项配置');
+  ws.state = 'veryHidden';
+  const map = {};
+
+  optionColumns.forEach((col, idx) => {
+    const excelCol = idx + 1;
+    const colLetter = excelColName(excelCol);
+    const opts = col.fs.options.filter(Boolean);
+    ws.getCell(1, excelCol).value = col.label;
+    opts.forEach((opt, oi) => {
+      ws.getCell(oi + 2, excelCol).value = opt;
+    });
+    ws.getColumn(excelCol).width = Math.max(10, Math.min(28, Math.max(...opts.map(o => String(o).length), String(col.label).length) + 2));
+    map[col.key] = `'选项配置'!$${colLetter}$2:$${colLetter}$${opts.length + 1}`;
+  });
+
+  return map;
+}
+
+function getFrameworkFieldValue(node, rowIndex, col, fs) {
+  if (!fs) return '';
+  if (col.key === 'infoType') {
+    if (node.parentId === null) return rowIndex === 0 ? 'Parent Map' : 'Child Map';
+    return node.isTask ? 'Task' : 'Concept';
+  }
+  if (col.key === 'updateType' && !fs.value) {
+    return node.parentId === null ? 'New Map' : 'New Topic';
+  }
+  return fs.value || '';
+}
+
+function calcFrameworkRowHeight(values) {
+  let maxLines = 1;
+  values.forEach(val => {
+    const text = val === null || val === undefined ? '' : String(val);
+    const lines = text.split('\n').length + Math.floor(text.length / 34);
+    if (lines > maxLines) maxLines = lines;
+  });
+  return Math.max(20, Math.min(120, maxLines * 16.5));
+}
+
+function buildFrameworkSheetExcel(workbook, nodes, enabledFields) {
+  const ws = workbook.addWorksheet('用户手册开发框架');
+  const dirCols = [
+    {key: 'map', label: 'Map*'},
+    {key: 'l1', label: '一级目录*'},
+    {key: 'l2', label: '二级目录*'},
+    {key: 'l3', label: '三级目录'},
+    {key: 'l4', label: '四级目录'},
+    {key: 'l5', label: '五级目录'},
+  ];
+  const fixedExtraCols = [
+    {key:'infoType',    label:'信息类型*'},
+    {key:'updateType',  label:'更新类型*'},
+    {key:'version',     label:'版本*'},
+    {key:'aggregate',   label:'聚合'},
+    {key:'keyPoints',   label:'章节要点*'},
+    {key:'competitor',  label:'对应友商'},
+    {key:'compDetail',  label:'具体友商可借鉴内容'},
+    {key:'materials',   label:'需提供的素材'},
+    {key:'matSource',   label:'素材提供方'},
+    {key:'matProgress', label:'素材提供进度'},
+    {key:'matLocation', label:'素材具体位置'},
+    {key:'owner',       label:'中文责任人'},
+    {key:'progress',    label:'中文进度*'},
+    {key:'dueDate',     label:'中文完成日期*'},
+    {key:'remark',      label:'备注'},
+  ];
+  const customFields = enabledFields.filter(f => f.isCustom).map(f => ({key: f.key, label: f.label, fs: f}));
+  const enabledMap = {};
+  enabledFields.forEach(f => { enabledMap[f.key] = f; });
+  const extraCols = fixedExtraCols
+    .filter(col => enabledMap[col.key])
+    .map(col => ({...col, fs: enabledMap[col.key]}))
+    .concat(customFields);
+  const allCols = dirCols.concat(extraCols);
+
+  allCols.forEach((col, idx) => {
+    ws.getColumn(idx + 1).width = REF_FRAMEWORK_WIDTHS[idx] || Math.max(12, Math.min(24, String(col.label).length * 1.8));
+    setExcelCell(ws.getCell(1, idx + 1), col.label, frameworkHeaderStyle());
+  });
+  ws.getRow(1).height = 20;
+  ws.views = [{state: 'frozen', ySplit: 1}];
+
+  const optionMap = buildFrameworkOptionSheet(workbook, extraCols);
+
+  nodes.forEach((node, idx) => {
+    const rowNum = idx + 2;
+    const isMapRow = node.parentId === null;
+    const style = frameworkBodyStyle(isMapRow);
+    const rowValues = [];
+
+    dirCols.forEach((_, dirIdx) => {
+      const value = node.level === dirIdx + 1 ? node.title : '';
+      rowValues.push(value);
+      setExcelCell(ws.getCell(rowNum, dirIdx + 1), value, style);
+    });
+
+    extraCols.forEach((col, extraIdx) => {
+      const cell = ws.getCell(rowNum, dirCols.length + extraIdx + 1);
+      const value = getFrameworkFieldValue(node, idx, col, col.fs);
+      rowValues.push(value);
+      if (col.key === 'version' && value !== '' && !isNaN(Number(value))) {
+        setExcelCell(cell, Number(value), style);
+      } else {
+        setExcelCell(cell, value, style);
+      }
+
+      if (optionMap[col.key]) {
+        cell.dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: [optionMap[col.key]],
+          showErrorMessage: true,
+          errorTitle: '输入无效',
+          error: '请从下拉选项中选择值。',
+        };
+      }
+    });
+
+    ws.getRow(rowNum).height = calcFrameworkRowHeight(rowValues);
+  });
+}
+
+async function doExport() {
+  const text = document.getElementById('md-editor').value;
+  const nodes = parseMd(text);
+  if (nodes.length === 0) { showToast('请先输入 Markdown 内容'); return; }
+  if (!window.ExcelJS) { showToast('导出失败：ExcelJS 未加载完成'); return; }
+
+  const enabledFields = fieldState.filter(f => f.enabled);
+
+  try {
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Codex';
+    workbook.created = new Date();
+
+    const ws1 = workbook.addWorksheet('内容策略');
+    copyLegacySheetToExcel(buildSheetContentStrategy(), ws1, 'content', REF_CONTENT_WIDTHS);
+
+    const ws2 = workbook.addWorksheet('复用策略');
+    copyLegacySheetToExcel(buildSheetReuseStrategy(), ws2, 'reuse', REF_REUSE_WIDTHS);
+
+    buildFrameworkSheetExcel(workbook, nodes, enabledFields);
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '文档框架.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+    closeExportModal();
+    showToast('已导出 文档框架.xlsx（含下拉选项）✓');
+  } catch (e) {
+    console.error(e);
+    showToast('导出失败：' + e.message);
+  }
+}
+
+// ══════════════════════════════════════════════
+//  UTILS
+// ══════════════════════════════════════════════
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+function clearEditor() {
+  if (confirm('确认清空编辑区？')) {
+    document.getElementById('md-editor').value = '';
+    document.getElementById('map-layer').innerHTML = '';
+    mapState.nodes = [];
+    mapState.tree = null;
+  }
+}
+
+function loadExample() {
+  const example = `# SD160 系列伺服系统用户手册
+
+## 前言&术语&安全指南
+
+### 前言
+
+### 术语介绍
+
+### 安全指南
+
+#### 安全声明
+
+#### 安全注意事项
+
+#### 安全标识
+
+## 产品介绍
+
+### 产品介绍
+
+### 型号&标签介绍
+
+#### 型号说明
+
+#### 标签说明
+
+### 部件说明
+
+#### 伺服驱动器
+
+#### 伺服电机
+
+## 选型指南
+
+### 选型指南 [task]
+
+### 电机与驱动器选型
+
+### 外围设备选型
+
+### 线缆选型
+
+#### 线缆介绍
+
+#### 线缆一览表
+
+## 设备安装
+
+### 设备安装
+
+### 开箱确认 [task]
+
+### 环境要求
+
+### 设备固定 [task]
+
+### 接口介绍
+
+#### 驱动器接口说明
+
+#### 电机接口说明
+
+### 接线 [task]
+
+## 设备调试
+
+### 调试流程 [task]
+
+### 试运行操作 [task]
+
+### 参数初始化 [task]
+
+### 增益调整
+
+## 功能说明
+
+### 控制模式
+
+#### 位置控制模式
+
+#### 速度控制模式
+
+#### 转矩控制模式
+
+### 抱闸保护功能
+
+#### 静止抱闸时序
+
+#### 旋转抱闸时序
+
+#### 故障抱闸时序
+
+### 停机方式
+
+### EtherCAT 通信
+
+## 参数说明
+
+### 参数一览表
+
+### 参数详细说明
+
+## 故障与报警
+
+### 故障与报警一览表
+
+### 故障处理 [task]
+
+### 报警处理 [task]
+
+## 维护与保养
+
+### 日常维护 [task]
+
+### 定期保养 [task]
+
+### 易损件更换 [task]`;
+
+  document.getElementById('md-editor').value = example;
+  renderMap();
+}
+
+// ══════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════
+window.addEventListener('load', () => {
+  // Restore from localStorage
+  const saved = localStorage.getItem('docFramework_md');
+  if (saved) {
+    document.getElementById('md-editor').value = saved;
+    showToast('已恢复上次编辑内容');
+  }
+
+  const savedLayout = localStorage.getItem('docFramework_layout');
+  if (savedLayout === 'mindmap' || savedLayout === 'fishbone') {
+    mapState.layoutMode = savedLayout;
+  }
+  updateLayoutSwitch();
+
+  const mindmapBtn = document.getElementById('mindmapLayoutBtn');
+  const fishboneBtn = document.getElementById('fishboneLayoutBtn');
+  if (mindmapBtn) {
+    mindmapBtn.addEventListener('click', () => setMapLayout('mindmap'));
+  }
+  if (fishboneBtn) {
+    fishboneBtn.addEventListener('click', () => setMapLayout('fishbone'));
+  }
+
+  const editor = document.getElementById('md-editor');
+
+  // Auto-save
+  editor.addEventListener('input', () => {
+    localStorage.setItem('docFramework_md', editor.value);
+  });
+
+  // ── Image paste support ──
+  // Converts pasted images to base64 data URLs and inserts as Markdown ![](data:...)
+  editor.addEventListener('paste', (e) => {
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    let hasImage = false;
+    for (const item of items) {
+      if (!item.type.startsWith('image/')) continue;
+      hasImage = true;
+      e.preventDefault();
+      const file = item.getAsFile();
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target.result;
+        const altName = '图片_' + Date.now();
+        const mdImg = `![${altName}](${dataUrl})`;
+        // Insert at cursor position
+        const start = editor.selectionStart;
+        const end   = editor.selectionEnd;
+        const before = editor.value.slice(0, start);
+        const after  = editor.value.slice(end);
+        // Make sure image is on its own line
+        const prefix = (before.length > 0 && !before.endsWith('\n')) ? '\n' : '';
+        const suffix = (after.length > 0 && !after.startsWith('\n')) ? '\n' : '';
+        editor.value = before + prefix + mdImg + suffix + after;
+        editor.selectionStart = editor.selectionEnd = start + prefix.length + mdImg.length;
+        localStorage.setItem('docFramework_md', editor.value);
+        showToast('图片已插入（base64）');
+      };
+      reader.readAsDataURL(file);
+      break; // only handle first image
+    }
+  });
+});
+</script>
+</body>
+</html>
