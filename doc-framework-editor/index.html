@@ -840,7 +840,7 @@ const NODE_H  = 34;    // heading node height
 const BODY_W  = 220;   // body node width
 const BODY_H  = 32;    // minimum body node height (text)
 const BODY_IMG_H = 22; // body node height (image thumbnail)
-const H_GAP   = 52;    // horizontal gap between levels
+const H_GAP   = 72;    // horizontal gap between levels
 const V_GAP   = 8;     // vertical gap between siblings
 const BODY_GAP = 4;    // vertical gap between body items
 const BODY_STACK_GAP = 8;
@@ -852,6 +852,9 @@ const BODY_BOX_PAD_X = 10;
 const BODY_BOX_PAD_Y = 8;
 const BODY_CONTENT_GAP = 8;
 const BODY_IMG_BTN_H = 28;
+const MAP_PAD = 36;
+const NODE_TEXT_MAX_CHARS = 18;
+const BODY_TEXT_WRAP_CHARS = 26;
 const ROOT_GAP = 40;
 const FISH_SPINE_MARGIN = 28;
 const FISH_BRANCH_GAP = 72;
@@ -914,8 +917,28 @@ function hasVisibleBody(node) {
   return !!(node.bodyExpanded && node.body && node.body.length > 0);
 }
 
+function bodyRendersAbove(node) {
+  return hasVisibleBody(node) && mapState.layoutMode === 'fishbone' && (node._fishSide === -1 || node.parentId === null);
+}
+
+function bodyRendersBelow(node) {
+  return hasVisibleBody(node) && !bodyRendersAbove(node);
+}
+
+function nodeBodySpan(node) {
+  return hasVisibleBody(node) ? BODY_STACK_GAP + bodyBlockH(node) : 0;
+}
+
 function nodeOwnH(node) {
-  return NODE_H + (hasVisibleBody(node) ? BODY_STACK_GAP + bodyBlockH(node) : 0);
+  return NODE_H + nodeBodySpan(node);
+}
+
+function nodeUpperH(node) {
+  return bodyRendersAbove(node) ? nodeBodySpan(node) : 0;
+}
+
+function nodeLowerH(node) {
+  return NODE_H + (bodyRendersBelow(node) ? nodeBodySpan(node) : 0);
 }
 
 function childrenBlockH(node) {
@@ -932,19 +955,28 @@ function getBodyTextLines(text = '') {
 
 // Subtree height including body
 function subtreeH(node) {
-  return Math.max(nodeOwnH(node), childrenBlockH(node));
+  const upper = nodeUpperH(node);
+  const lower = nodeLowerH(node);
+  const childH = childrenBlockH(node);
+  if (childH <= 0) return upper + lower;
+  if (bodyRendersBelow(node)) return upper + lower + V_GAP + childH;
+  return upper + Math.max(lower, childH);
 }
 
 function layoutTree(root, x, y) {
   root.x = x;
-  const selfH = nodeOwnH(root);
+  const upper = nodeUpperH(root);
+  const lower = nodeLowerH(root);
   const childH = childrenBlockH(root);
-  root.y = y + Math.max(0, (childH - selfH) / 2);
+  if (bodyRendersBelow(root)) root.y = y + upper;
+  else root.y = y + upper + Math.max(0, (childH - lower) / 2);
 
   if (root.collapsed || root.children.length === 0) return;
 
   const childX = x + NODE_W + H_GAP;
-  let curY = y + Math.max(0, (selfH - childH) / 2);
+  let curY = bodyRendersBelow(root)
+    ? (root.y + lower + V_GAP)
+    : (y + upper + Math.max(0, (lower - childH) / 2));
   for (const child of root.children) {
     const h = subtreeH(child);
     layoutTree(child, childX, curY);
@@ -970,7 +1002,7 @@ function setFishSide(node, side) {
 
 function getBodyAnchor(node) {
   const bodyH = bodyBlockH(node);
-  if (mapState.layoutMode === 'fishbone' && node._fishSide === -1) {
+  if (mapState.layoutMode === 'fishbone' && (node._fishSide === -1 || node.parentId === null)) {
     return {
       x: node.x + BODY_INDENT,
       y: node.y - BODY_STACK_GAP - bodyH,
@@ -990,6 +1022,7 @@ function getNodeBounds(node) {
 
   if (hasVisibleBody(node)) {
     const anchor = getBodyAnchor(node);
+    minY = Math.min(minY, anchor.y);
     maxX = Math.max(maxX, anchor.x + BODY_W);
     maxY = Math.max(maxY, anchor.y + bodyBlockH(node));
   }
@@ -1012,7 +1045,85 @@ function getSubtreeBounds(node) {
 function translateSubtree(node, dx, dy) {
   node.x += dx;
   node.y += dy;
+  if (node._fish) {
+    node._fish.spineY += dy;
+    node._fish.sectionBottom += dy;
+  }
   node.children.forEach(child => translateSubtree(child, dx, dy));
+}
+
+function getVisibleBounds(roots) {
+  const bounds = {minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity};
+  roots.forEach(root => {
+    getVisibleNodes(root, []).forEach(node => {
+      const box = getNodeBounds(node);
+      bounds.minX = Math.min(bounds.minX, box.minX);
+      bounds.minY = Math.min(bounds.minY, box.minY);
+      bounds.maxX = Math.max(bounds.maxX, box.maxX);
+      bounds.maxY = Math.max(bounds.maxY, box.maxY);
+    });
+    if (root._fish) {
+      bounds.maxX = Math.max(bounds.maxX, root._fish.spineEnd);
+      bounds.minY = Math.min(bounds.minY, root._fish.spineY);
+      bounds.maxY = Math.max(bounds.maxY, root._fish.sectionBottom);
+    }
+  });
+  return bounds;
+}
+
+function normalizeLayout(roots) {
+  const bounds = getVisibleBounds(roots);
+  if (!Number.isFinite(bounds.minX) || !Number.isFinite(bounds.minY)) return;
+  const dx = bounds.minX < MAP_PAD ? MAP_PAD - bounds.minX : 0;
+  const dy = bounds.minY < MAP_PAD ? MAP_PAD - bounds.minY : 0;
+  if (dx === 0 && dy === 0) return;
+  roots.forEach(root => translateSubtree(root, dx, dy));
+}
+
+function svgEl(tag, attrs = {}) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  Object.entries(attrs).forEach(([k, v]) => {
+    if (v !== undefined && v !== null) el.setAttribute(k, String(v));
+  });
+  return el;
+}
+
+function truncateSvgText(text = '', maxChars = NODE_TEXT_MAX_CHARS) {
+  const str = String(text);
+  if (str.length <= maxChars) return str;
+  return str.slice(0, Math.max(1, maxChars - 1)) + '…';
+}
+
+function wrapSvgText(text = '', maxChars = BODY_TEXT_WRAP_CHARS) {
+  const lines = [];
+  String(text).split('\n').forEach(part => {
+    const chunk = part || '';
+    if (!chunk) {
+      lines.push('');
+      return;
+    }
+    for (let i = 0; i < chunk.length; i += maxChars) {
+      lines.push(chunk.slice(i, i + maxChars));
+    }
+  });
+  return lines.length ? lines : [''];
+}
+
+function addSvgText(group, x, y, text, opts = {}) {
+  const t = svgEl('text', {
+    x,
+    y,
+    fill: opts.fill || '#000',
+    'font-size': opts.fontSize || 12,
+    'font-family': `'Noto Sans SC', sans-serif`,
+    'font-weight': opts.fontWeight || 400,
+    'dominant-baseline': opts.baseline || 'middle',
+    'text-anchor': opts.anchor || 'start',
+    'pointer-events': opts.pointerEvents || 'none',
+  });
+  t.textContent = text;
+  group.appendChild(t);
+  return t;
 }
 
 function layoutMindmapRoots(roots) {
@@ -1071,7 +1182,7 @@ function layoutFishboneRoots(roots) {
 // ══════════════════════════════════════════════
 //  RENDERER
 // ══════════════════════════════════════════════
-let mapState = { nodes: [], tree: null, scale: 1, tx: 40, ty: 40, layoutMode: 'mindmap' };
+let mapState = { nodes: [], tree: null, scale: 1, tx: 40, ty: 40, canvasW: 1, canvasH: 1, layoutMode: 'mindmap' };
 let ctxTarget = null;
 
 function renderMap() {
@@ -1112,6 +1223,7 @@ function drawMap() {
   // Layout
   if (mapState.layoutMode === 'fishbone') layoutFishboneRoots(roots);
   else layoutMindmapRoots(roots);
+  normalizeLayout(roots);
 
   const visible = [];
   roots.forEach(root => getVisibleNodes(root, visible));
@@ -1167,75 +1279,114 @@ function drawMap() {
       ? {bg: TASK_BG, border: TASK_BORDER, color: TASK_TEXT}
       : getNodeColor(map, node);
 
-    // -- Heading foreignObject --
-    const fo = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
-    fo.setAttribute('x', node.x);
-    fo.setAttribute('y', node.y);
-    fo.setAttribute('width', NODE_W);
-    fo.setAttribute('height', NODE_H);
-
-    const div = document.createElement('div');
-    div.className = 'node-box';
-    div.style.cssText = `background:${colors.bg};border-color:${colors.border};color:${colors.color};height:${NODE_H}px;`;
-
-    // Label (double-click to edit)
-    const lbl = document.createElement('div');
-    lbl.className = 'node-label';
-    lbl.title = node.title;
-    lbl.textContent = node.title;
-    lbl.addEventListener('dblclick', (e) => {
-      e.stopPropagation();
-      startInlineEdit(lbl, node, 'title', colors);
+    const g = svgEl('g', {transform: `translate(${node.x},${node.y})`, class: 'node-svg'});
+    const rect = svgEl('rect', {
+      x: 0, y: 0, rx: 6, ry: 6,
+      width: NODE_W, height: NODE_H,
+      fill: colors.bg,
+      stroke: colors.border,
+      'stroke-width': 1.5,
     });
-    div.appendChild(lbl);
+    rect.style.cursor = 'pointer';
+    g.appendChild(rect);
 
-    // task badge
+    const titleText = addSvgText(g, 10, NODE_H / 2, truncateSvgText(node.title), {
+      fill: colors.color,
+      fontSize: 12,
+      fontWeight: 500,
+    });
+    titleText.style.cursor = 'text';
+    titleText.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      const val = window.prompt('编辑标题', node.title);
+      if (val !== null) {
+        const trimmed = val.trim();
+        if (trimmed && trimmed !== node.title) {
+          node.title = trimmed;
+          syncNodeTitleToMd(node);
+          drawMap();
+        }
+      }
+    });
+
     if (node.isTask) {
-      const badge = document.createElement('div');
-      badge.className = 'node-type-badge';
-      badge.textContent = 'task';
-      badge.style.color = TASK_TEXT;
-      div.appendChild(badge);
-    }
-
-    // Body expand button (if has body)
-    if (node.body && node.body.length > 0) {
-      const bBtn = document.createElement('div');
-      bBtn.className = 'node-body-btn';
-      bBtn.title = node.bodyExpanded ? '收起正文' : '展开正文';
-      bBtn.textContent = node.bodyExpanded ? '▾' : '▸';
-      bBtn.style.color = colors.color;
-      bBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        node.bodyExpanded = !node.bodyExpanded;
-        drawMap();
+      const badgeW = 28;
+      const badgeX = NODE_W - 66;
+      g.appendChild(svgEl('rect', {
+        x: badgeX, y: 8, width: badgeW, height: 16, rx: 4, ry: 4,
+        fill: 'rgba(255,255,255,.45)',
+        stroke: 'rgba(0,0,0,.08)',
+        'stroke-width': 1,
+      }));
+      addSvgText(g, badgeX + badgeW / 2, 16, 'task', {
+        fill: TASK_TEXT,
+        fontSize: 9,
+        fontWeight: 500,
+        anchor: 'middle',
       });
-      div.appendChild(bBtn);
     }
 
-    // Children collapse toggle
+    let ctlX = NODE_W - 18;
     if (node.children.length > 0) {
-      const tog = document.createElement('div');
-      tog.className = 'node-toggle';
-      tog.textContent = node.collapsed ? '+' : '−';
-      tog.style.color = colors.color;
+      const tog = svgEl('g', {transform: `translate(${ctlX},10)`, class: 'node-ctl'});
+      const togBg = svgEl('circle', {
+        cx: 7, cy: 7, r: 7,
+        fill: 'rgba(255,255,255,.68)',
+        stroke: 'rgba(0,0,0,.15)',
+        'stroke-width': 1,
+      });
+      tog.appendChild(togBg);
+      addSvgText(tog, 7, 7.5, node.collapsed ? '+' : '−', {
+        fill: colors.color,
+        fontSize: 9,
+        fontWeight: 700,
+        anchor: 'middle',
+      });
+      tog.style.cursor = 'pointer';
       tog.addEventListener('click', (e) => {
         e.stopPropagation();
         node.collapsed = !node.collapsed;
         drawMap();
       });
-      div.appendChild(tog);
+      g.appendChild(tog);
+      ctlX -= 18;
     }
 
-    // Right click → context menu
-    div.addEventListener('contextmenu', (e) => {
+    if (node.body && node.body.length > 0) {
+      const bodyCtl = svgEl('g', {transform: `translate(${ctlX - 1},7)`, class: 'node-ctl'});
+      bodyCtl.appendChild(svgEl('line', {
+        x1: 8, y1: 11, x2: 8, y2: 18,
+        stroke: '#d94b4b',
+        'stroke-width': 2,
+        'stroke-linecap': 'round',
+      }));
+      bodyCtl.appendChild(svgEl('circle', {
+        cx: 8, cy: 7, r: 7,
+        fill: '#d94b4b',
+        stroke: '#b63232',
+        'stroke-width': 1,
+      }));
+      addSvgText(bodyCtl, 8, 7.5, node.bodyExpanded ? '−' : '+', {
+        fill: '#fff',
+        fontSize: 10,
+        fontWeight: 700,
+        anchor: 'middle',
+      });
+      bodyCtl.style.cursor = 'pointer';
+      bodyCtl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        node.bodyExpanded = !node.bodyExpanded;
+        drawMap();
+      });
+      g.appendChild(bodyCtl);
+    }
+
+    g.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       ctxTarget = node;
       showCtx(e.clientX, e.clientY);
     });
-
-    fo.appendChild(div);
-    layer.appendChild(fo);
+    layer.appendChild(g);
 
     maxX = Math.max(maxX, node.x + NODE_W + 60);
     maxY = Math.max(maxY, node.y + NODE_H + 60);
@@ -1247,7 +1398,7 @@ function drawMap() {
       const bodyY = anchor.y;
       const bodyH = bodyBlockH(node);
       const bColors = getBodyColor(map, node);
-      const bodyAbove = mapState.layoutMode === 'fishbone' && node._fishSide === -1;
+      const bodyAbove = mapState.layoutMode === 'fishbone' && (node._fishSide === -1 || node.parentId === null);
 
       // connector from heading to body box
       const bc = document.createElementNS('http://www.w3.org/2000/svg','line');
@@ -1261,54 +1412,68 @@ function drawMap() {
       bc.setAttribute('opacity', '0.6');
       layer.appendChild(bc);
 
-      const bfo = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
-      bfo.setAttribute('x', bodyX);
-      bfo.setAttribute('y', bodyY);
-      bfo.setAttribute('width', BODY_W);
-      bfo.setAttribute('height', bodyH);
+      const bodyGroup = svgEl('g', {transform: `translate(${bodyX},${bodyY})`, class: 'body-svg'});
+      bodyGroup.appendChild(svgEl('rect', {
+        x: 0, y: 0, width: BODY_W, height: bodyH, rx: 6, ry: 6,
+        fill: bColors.bg,
+        stroke: bColors.border,
+        'stroke-width': 1.5,
+      }));
 
-      const bdiv = document.createElement('div');
-      bdiv.style.cssText = `
-        display:flex;flex-direction:column;gap:${BODY_CONTENT_GAP}px;
-        background:${bColors.bg};border:1.5px solid ${bColors.border};
-        border-radius:6px;color:${bColors.color};
-        min-height:${bodyH}px;height:${bodyH}px;
-        padding:${BODY_BOX_PAD_Y}px ${BODY_BOX_PAD_X}px;
-        font-size:11px;font-family:'Noto Sans SC',sans-serif;
-        overflow:hidden;box-sizing:border-box;
-      `;
+      let contentY = BODY_BOX_PAD_Y;
 
       node.body.forEach((bItem, bi) => {
         if (bItem.type === 'image') {
-          const imgBtn = document.createElement('button');
-          imgBtn.type = 'button';
-          imgBtn.style.cssText = `
-            display:flex;align-items:center;justify-content:space-between;gap:8px;
-            width:100%;height:${BODY_IMG_BTN_H}px;padding:0 10px;
-            border:1px solid ${bColors.border};border-radius:5px;
-            background:rgba(255,255,255,.5);color:${bColors.color};
-            font-size:11px;cursor:pointer;box-sizing:border-box;
-          `;
-          imgBtn.innerHTML = `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${bItem.alt || `图片 ${bi + 1}`}</span><span style="flex-shrink:0;">放大</span>`;
-          imgBtn.addEventListener('click', (e) => {
+          const btn = svgEl('g', {transform: `translate(${BODY_BOX_PAD_X},${contentY})`});
+          btn.appendChild(svgEl('rect', {
+            x: 0, y: 0, width: BODY_W - BODY_BOX_PAD_X * 2, height: BODY_IMG_BTN_H, rx: 5, ry: 5,
+            fill: 'rgba(255,255,255,.5)',
+            stroke: bColors.border,
+            'stroke-width': 1,
+          }));
+          addSvgText(btn, 10, BODY_IMG_BTN_H / 2, truncateSvgText(bItem.alt || `图片 ${bi + 1}`, 22), {
+            fill: bColors.color,
+            fontSize: 11,
+          });
+          addSvgText(btn, BODY_W - BODY_BOX_PAD_X * 2 - 10, BODY_IMG_BTN_H / 2, '放大', {
+            fill: bColors.color,
+            fontSize: 11,
+            fontWeight: 600,
+            anchor: 'end',
+          });
+          btn.style.cursor = 'pointer';
+          btn.addEventListener('click', (e) => {
             e.stopPropagation();
             openLightbox(bItem.src, bItem.alt);
           });
-          bdiv.appendChild(imgBtn);
+          bodyGroup.appendChild(btn);
+          contentY += BODY_IMG_BTN_H;
         } else {
-          const textBlock = document.createElement('div');
-          textBlock.style.cssText = 'white-space:normal;word-break:break-word;line-height:1.38;';
-          textBlock.textContent = bItem.content;
-          textBlock.addEventListener('dblclick', (e) => {
-            e.stopPropagation();
-            startBodyInlineEdit(textBlock, node, bi, bColors);
+          const lines = wrapSvgText(bItem.content);
+          const textG = svgEl('g', {transform: `translate(${BODY_BOX_PAD_X},${contentY})`});
+          lines.forEach((line, li) => {
+            addSvgText(textG, 0, BODY_TEXT_PAD_Y + li * BODY_TEXT_LINE_H, line, {
+              fill: bColors.color,
+              fontSize: 11,
+              baseline: 'hanging',
+            });
           });
-          bdiv.appendChild(textBlock);
+          textG.style.cursor = 'text';
+          textG.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            const val = window.prompt('编辑正文', bItem.content);
+            if (val !== null && val !== bItem.content) {
+              bItem.content = val;
+              syncBodyToMd(node);
+              drawMap();
+            }
+          });
+          bodyGroup.appendChild(textG);
+          contentY += bodyItemHeight(bItem);
         }
+        if (bi < node.body.length - 1) contentY += BODY_CONTENT_GAP;
       });
-
-      bfo.appendChild(bdiv);
-      layer.appendChild(bfo);
+      layer.appendChild(bodyGroup);
 
       maxX = Math.max(maxX, bodyX + BODY_W + 60);
       maxY = Math.max(maxY, bodyY + bodyH + 60);
@@ -1474,19 +1639,43 @@ function openLightbox(src, alt) {
 }
 
 function updateTransform() {
+  const canvas = document.getElementById('map-canvas');
   const svg = document.getElementById('map-svg');
-  svg.style.transform = `translate(${mapState.tx}px, ${mapState.ty}px) scale(${mapState.scale})`;
+  const w = Math.max(1, canvas.clientWidth);
+  const h = Math.max(1, canvas.clientHeight);
+  mapState.canvasW = w;
+  mapState.canvasH = h;
+  svg.style.width = w + 'px';
+  svg.style.height = h + 'px';
+  svg.style.transform = 'none';
+  svg.setAttribute('viewBox', `${mapState.tx} ${mapState.ty} ${w / mapState.scale} ${h / mapState.scale}`);
 }
 
-function resetView() {
-  mapState.scale = 0.9;
-  mapState.tx = 40;
-  mapState.ty = 40;
+function setScaleAt(nextScale, screenX, screenY) {
+  const scale = Math.min(2.5, Math.max(0.2, nextScale));
+  const worldX = mapState.tx + screenX / mapState.scale;
+  const worldY = mapState.ty + screenY / mapState.scale;
+  mapState.scale = scale;
+  mapState.tx = worldX - screenX / scale;
+  mapState.ty = worldY - screenY / scale;
   updateTransform();
 }
 
-function zoomIn() { mapState.scale = Math.min(2.5, mapState.scale * 1.2); updateTransform(); }
-function zoomOut() { mapState.scale = Math.max(0.2, mapState.scale / 1.2); updateTransform(); }
+function resetView() {
+  mapState.scale = 1;
+  mapState.tx = 0;
+  mapState.ty = 0;
+  updateTransform();
+}
+
+function zoomIn() {
+  const canvas = document.getElementById('map-canvas');
+  setScaleAt(mapState.scale * 1.2, canvas.clientWidth / 2, canvas.clientHeight / 2);
+}
+function zoomOut() {
+  const canvas = document.getElementById('map-canvas');
+  setScaleAt(mapState.scale / 1.2, canvas.clientWidth / 2, canvas.clientHeight / 2);
+}
 
 function updateLayoutSwitch() {
   document.querySelectorAll('#mapLayoutSwitch .map-layout-btn').forEach(btn => {
@@ -1531,7 +1720,7 @@ function collapseToL2() {
 let drag = {active: false, startX: 0, startY: 0, startTx: 0, startTy: 0};
 
 document.getElementById('map-canvas').addEventListener('mousedown', (e) => {
-  if (e.target.closest('.node-box')) return;
+  if (e.target.closest && e.target.closest('.node-svg, .body-svg, .node-ctl, #mapLayoutSwitch')) return;
   drag.active = true;
   drag.startX = e.clientX;
   drag.startY = e.clientY;
@@ -1540,18 +1729,25 @@ document.getElementById('map-canvas').addEventListener('mousedown', (e) => {
 });
 document.addEventListener('mousemove', (e) => {
   if (!drag.active) return;
-  mapState.tx = drag.startTx + e.clientX - drag.startX;
-  mapState.ty = drag.startTy + e.clientY - drag.startY;
+  mapState.tx = drag.startTx - (e.clientX - drag.startX) / mapState.scale;
+  mapState.ty = drag.startTy - (e.clientY - drag.startY) / mapState.scale;
   updateTransform();
 });
 document.addEventListener('mouseup', () => { drag.active = false; });
 
 document.getElementById('map-canvas').addEventListener('wheel', (e) => {
   e.preventDefault();
+  const canvas = document.getElementById('map-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const mouseX = e.clientX - rect.left;
+  const mouseY = e.clientY - rect.top;
   const factor = e.deltaY > 0 ? 0.9 : 1.1;
-  mapState.scale = Math.min(2.5, Math.max(0.2, mapState.scale * factor));
-  updateTransform();
+  setScaleAt(mapState.scale * factor, mouseX, mouseY);
 }, {passive: false});
+
+window.addEventListener('resize', () => {
+  if (mapState.tree) updateTransform();
+});
 
 // ══════════════════════════════════════════════
 //  CONTEXT MENU
