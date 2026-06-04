@@ -940,20 +940,34 @@ const TASK_TEXT = '#1a5e40';
 // ══════════════════════════════════════════════
 //  MARKDOWN PARSER
 //  每个 heading 节点额外携带 body 数组:
-//    [{type:'text'|'image', content:string, src?:string, alt?:string}]
+//    [{type:'text'|'image'|'note', content:string, src?:string, alt?:string}]
 //  body 来自该标题到下一同级/更高级标题之间的普通段落和图片行
 // ══════════════════════════════════════════════
 function parseMd(text) {
   const lines = text.split('\n');
   const nodes = [];
+  const mapNotes = [];
   let idCounter = 0;
   const stack = [];
 
   // 先标注每行类型
-  const parsed = lines.map(raw => {
+  const parsed = lines.map((raw, lineIndex) => {
     const line = raw.trim();
     const hm = line.match(/^(#{1,6})\s+(.+)/);
     if (hm) return {type:'heading', level: hm[1].length, text: hm[2].trim()};
+    const nm = line.match(/^>\s*\[!NOTE\]\s*(.*?)(?:\s*<!--\s*map-note:x=(-?\d+(?:\.\d+)?),y=(-?\d+(?:\.\d+)?)\s*-->)?$/i);
+    if (nm) {
+      const content = (nm[1] || 'Note').trim() || 'Note';
+      const note = {
+        type: 'note',
+        content,
+        lineIndex,
+        x: nm[2] !== undefined ? Number(nm[2]) : null,
+        y: nm[3] !== undefined ? Number(nm[3]) : null,
+      };
+      if (note.x !== null && note.y !== null) mapNotes.push(note);
+      return note;
+    }
     const im = line.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
     if (im) return {type:'image', alt: im[1], src: im[2]};
     if (line) return {type:'text', text: line};
@@ -984,6 +998,7 @@ function parseMd(text) {
     const body = [];
     for (let i = hi + 1; i < nextHi; i++) {
       const bp = parsed[i];
+      if (bp.type === 'note' && bp.x === null) body.push({type:'note', content: bp.content});
       if (bp.type === 'text')  body.push({type:'text',  content: bp.text});
       if (bp.type === 'image') body.push({type:'image', src: bp.src, alt: bp.alt || ''});
     }
@@ -996,6 +1011,7 @@ function parseMd(text) {
       collapsed: level <= 2 ? false : true,
     });
   });
+  parseMd.lastNotes = mapNotes;
   return nodes;
 }
 
@@ -1056,13 +1072,17 @@ const BODY_BOX_PAD_X = 10;
 const BODY_BOX_PAD_Y = 8;
 const BODY_CONTENT_GAP = 8;
 const BODY_IMG_BTN_H = 28;
+const NOTE_W = 200;
+const NOTE_LINE_H = 15;
+const NOTE_PAD_X = 10;
+const NOTE_PAD_Y = 8;
 const MAP_PAD = 36;
 const NODE_TEXT_MAX_CHARS = 18;
 const BODY_TEXT_WRAP_CHARS = 26;
 const NODE_TEXT_PAD_X = 10;
 const NODE_TEXT_RIGHT_PAD = 8;
-const NODE_TITLE_LINE_H = 15;
-const NODE_TITLE_PAD_Y = 8;
+const NODE_TITLE_LINE_H = 16;
+const NODE_TITLE_PAD_Y = 9;
 const ROOT_GAP = 40;
 const FISH_SPINE_MARGIN = 28;
 const FISH_BRANCH_GAP = 72;
@@ -1123,6 +1143,14 @@ function bodyBlockH(node) {
   return BODY_BOX_PAD_Y * 2 + node.body.reduce((sum, b, i) => {
     return sum + bodyItemHeight(b) + (i > 0 ? BODY_CONTENT_GAP : 0);
   }, 0);
+}
+
+function noteLines(text = '') {
+  return wrapTextByWidth(text, NOTE_W - NOTE_PAD_X * 2, 11);
+}
+
+function noteHeight(text = '') {
+  return NOTE_PAD_Y * 2 + noteLines(text).length * NOTE_LINE_H;
 }
 
 function isPresentationBodyVisible(node) {
@@ -1196,7 +1224,7 @@ function nodeTitleMaxWidth(node) {
   let titleMaxW = NODE_W - NODE_TEXT_PAD_X - NODE_TEXT_RIGHT_PAD;
   if (node.children && node.children.length > 0) titleMaxW -= 18;
   if (node.body && node.body.length > 0) titleMaxW -= 18;
-  if (node.isTask) titleMaxW -= 34;
+  if (node.isTask) titleMaxW -= 46;
   return Math.max(64, titleMaxW);
 }
 
@@ -1246,6 +1274,7 @@ function layoutTree(root, x, y) {
 
 function bodyItemHeight(item) {
   if (item.type === 'image') return BODY_IMG_BTN_H;
+  if (item.type === 'note') return noteHeight(item.content);
   return Math.max(BODY_H, getBodyTextLines(item.content) * BODY_TEXT_LINE_H + BODY_TEXT_PAD_Y * 2);
 }
 
@@ -1397,6 +1426,33 @@ function addSvgText(group, x, y, text, opts = {}) {
   return t;
 }
 
+function renderNoteStrip(parent, x, y, text, opts = {}) {
+  const width = opts.width || NOTE_W;
+  const lines = wrapTextByWidth(text, width - NOTE_PAD_X * 2, 11);
+  const height = NOTE_PAD_Y * 2 + lines.length * NOTE_LINE_H;
+  const g = svgEl('g', {transform: `translate(${x},${y})`, class: opts.className || 'note-strip'});
+  g.appendChild(svgEl('rect', {
+    x: 0, y: 0, width, height, rx: 4, ry: 4,
+    fill: opts.fill || '#fff2a8',
+    stroke: opts.stroke || '#d7b84f',
+    'stroke-width': opts.strokeWidth || 1.4,
+  }));
+  g.appendChild(svgEl('rect', {
+    x: 0, y: 0, width: 5, height, rx: 3, ry: 3,
+    fill: opts.accent || '#f0b429',
+  }));
+  lines.forEach((line, li) => {
+    addSvgText(g, NOTE_PAD_X + 4, NOTE_PAD_Y + li * NOTE_LINE_H, line, {
+      fill: opts.color || '#5b4a13',
+      fontSize: 11,
+      fontWeight: 500,
+      baseline: 'hanging',
+    });
+  });
+  parent.appendChild(g);
+  return {group: g, width, height};
+}
+
 function layoutMindmapRoots(roots) {
   let startY = 0;
   roots.forEach(root => {
@@ -1453,9 +1509,10 @@ function layoutFishboneRoots(roots) {
 // ══════════════════════════════════════════════
 //  RENDERER
 // ══════════════════════════════════════════════
-let mapState = { nodes: [], tree: null, scale: 1, tx: 40, ty: 40, canvasW: 1, canvasH: 1, layoutMode: 'mindmap', selectedNodeId: null };
+let mapState = { nodes: [], tree: null, notes: [], scale: 1, tx: 40, ty: 40, canvasW: 1, canvasH: 1, layoutMode: 'mindmap', selectedNodeId: null };
 let ctxTarget = null;
 let ctxMode = 'node';
+let ctxPoint = {clientX: 0, clientY: 0};
 let presentState = {active: false, order: [], index: 0, savedCollapse: null};
 
 function getLineOffset(lines, lineIndex) {
@@ -1600,6 +1657,7 @@ function prevPresentation() {
 function renderMap() {
   const text = document.getElementById('md-editor').value;
   const flat = parseMd(text);
+  mapState.notes = parseMd.lastNotes || [];
   if (flat.length === 0) { showToast('请先输入 Markdown 内容'); return; }
 
   // Preserve collapse states across re-renders
@@ -1812,6 +1870,7 @@ function drawMap() {
       e.preventDefault();
       ctxTarget = node;
       ctxMode = 'node';
+      ctxPoint = {clientX: e.clientX, clientY: e.clientY};
       showCtx(e.clientX, e.clientY);
     });
     g.addEventListener('click', (e) => {
@@ -1881,6 +1940,22 @@ function drawMap() {
           });
           bodyGroup.appendChild(btn);
           contentY += BODY_IMG_BTN_H;
+        } else if (bItem.type === 'note') {
+          const note = renderNoteStrip(bodyGroup, BODY_BOX_PAD_X, contentY, bItem.content, {
+            width: BODY_W - BODY_BOX_PAD_X * 2,
+            className: 'body-note-strip',
+          });
+          note.group.style.cursor = 'text';
+          note.group.addEventListener('dblclick', (e) => {
+            e.stopPropagation();
+            const val = window.prompt('编辑 Note', bItem.content);
+            if (val !== null && val.trim() !== bItem.content) {
+              bItem.content = val.trim() || 'Note';
+              syncBodyToMd(node);
+              drawMap();
+            }
+          });
+          contentY += note.height;
         } else {
           const lines = wrapTextByWidth(bItem.content, BODY_W - BODY_BOX_PAD_X * 2, 11);
           const textG = svgEl('g', {transform: `translate(${BODY_BOX_PAD_X},${contentY})`});
@@ -1915,6 +1990,7 @@ function drawMap() {
         e.stopPropagation();
         ctxTarget = node;
         ctxMode = 'node';
+        ctxPoint = {clientX: e.clientX, clientY: e.clientY};
         showCtx(e.clientX, e.clientY);
       });
       layer.appendChild(bodyGroup);
@@ -1923,6 +1999,32 @@ function drawMap() {
       maxY = Math.max(maxY, bodyY + bodyH + 60);
     }
   }
+
+  (mapState.notes || []).forEach((note) => {
+    const x = Number.isFinite(note.x) ? note.x : MAP_PAD;
+    const y = Number.isFinite(note.y) ? note.y : MAP_PAD;
+    const rendered = renderNoteStrip(layer, x, y, note.content, {className: 'map-note-strip'});
+    rendered.group.style.cursor = 'text';
+    rendered.group.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      const val = window.prompt('编辑 Note', note.content);
+      if (val !== null && val.trim() !== note.content) {
+        note.content = val.trim() || 'Note';
+        syncMapNoteToMd(note);
+        renderMap();
+      }
+    });
+    rendered.group.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      ctxTarget = null;
+      ctxMode = 'canvas';
+      ctxPoint = {clientX: e.clientX, clientY: e.clientY};
+      showCtx(e.clientX, e.clientY);
+    });
+    maxX = Math.max(maxX, x + rendered.width + 60);
+    maxY = Math.max(maxY, y + rendered.height + 60);
+  });
 
   if (mapState.layoutMode === 'fishbone') {
     roots.forEach(root => {
@@ -2004,6 +2106,21 @@ function syncNodeTitleToMd(node) {
   localStorage.setItem('docFramework_md', editor.value);
 }
 
+function normalizeNoteText(value) {
+  return String(value || '')
+    .replace(/\s*\n+\s*/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim() || 'Note';
+}
+
+function noteMarkdownLine(content, x = null, y = null) {
+  const note = `> [!NOTE] ${normalizeNoteText(content)}`;
+  if (Number.isFinite(x) && Number.isFinite(y)) {
+    return `${note} <!-- map-note:x=${x.toFixed(1)},y=${y.toFixed(1)} -->`;
+  }
+  return note;
+}
+
 // ── Sync body text back to Markdown ──
 function syncBodyToMd(node) {
   const editor = document.getElementById('md-editor');
@@ -2018,9 +2135,11 @@ function syncBodyToMd(node) {
   }
 
   // Build new body lines
-  const newBodyLines = node.body.map(b =>
-    b.type === 'image' ? `![${b.alt}](${b.src})` : b.content
-  );
+  const newBodyLines = node.body.map(b => {
+    if (b.type === 'image') return `![${b.alt}](${b.src})`;
+    if (b.type === 'note') return noteMarkdownLine(b.content);
+    return b.content;
+  });
 
   lines.splice(
     headingLineIdx + 1,
@@ -2028,6 +2147,16 @@ function syncBodyToMd(node) {
     ...(newBodyLines.length > 0 ? ['', ...newBodyLines, ''] : [])
   );
 
+  editor.value = lines.join('\n');
+  localStorage.setItem('docFramework_md', editor.value);
+}
+
+function syncMapNoteToMd(note) {
+  const editor = document.getElementById('md-editor');
+  const lines = editor.value.split('\n');
+  const lineIndex = Number.isInteger(note.lineIndex) ? note.lineIndex : -1;
+  if (lineIndex < 0 || lineIndex >= lines.length) return;
+  lines[lineIndex] = noteMarkdownLine(note.content, note.x, note.y);
   editor.value = lines.join('\n');
   localStorage.setItem('docFramework_md', editor.value);
 }
@@ -2211,7 +2340,7 @@ let drag = {active: false, startX: 0, startY: 0, startTx: 0, startTy: 0};
 
 document.getElementById('map-canvas').addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
-  if (e.target.closest && e.target.closest('.node-svg, .body-svg, .node-ctl, #mapLayoutSwitch')) return;
+  if (e.target.closest && e.target.closest('.node-svg, .body-svg, .node-ctl, .note-strip, .body-note-strip, .map-note-strip, #mapLayoutSwitch')) return;
   drag.active = true;
   drag.startX = e.clientX;
   drag.startY = e.clientY;
@@ -2237,10 +2366,11 @@ document.getElementById('map-canvas').addEventListener('wheel', (e) => {
 }, {passive: false});
 
 document.getElementById('map-canvas').addEventListener('contextmenu', (e) => {
-  if (e.target.closest && e.target.closest('.node-svg, .body-svg, .node-ctl, #mapLayoutSwitch')) return;
+  if (e.target.closest && e.target.closest('.node-svg, .body-svg, .node-ctl, .note-strip, .body-note-strip, .map-note-strip, #mapLayoutSwitch')) return;
   e.preventDefault();
   ctxTarget = null;
   ctxMode = 'canvas';
+  ctxPoint = {clientX: e.clientX, clientY: e.clientY};
   showCtx(e.clientX, e.clientY);
 });
 
@@ -2299,38 +2429,47 @@ function toggleCollapse() {
 
 function addNoteFromContext() {
   const editor = document.getElementById('md-editor');
-  const title = window.prompt('Add Note', 'Note');
-  if (title === null) {
+  const text = window.prompt('Add Note', 'Note');
+  if (text === null) {
     hideCtx();
     return;
   }
-  const cleanTitle = title.trim() || 'Note';
+  const noteText = normalizeNoteText(text);
   const lines = editor.value.split('\n');
-  const insertLevel = ctxMode === 'node' && ctxTarget
-    ? Math.min(6, ctxTarget.level + 1)
-    : 2;
-  const heading = '#'.repeat(insertLevel) + ' ' + cleanTitle;
-  const body = '在这里补充章节要点。';
 
   if (ctxMode === 'node' && ctxTarget && Number.isInteger(ctxTarget.lineStart)) {
-    let insertAt = lines.length;
+    let insertAt = ctxTarget.lineStart + 1;
     for (let i = ctxTarget.lineStart + 1; i < lines.length; i++) {
-      const m = lines[i].match(/^(#{1,6})\s+/);
-      if (m && m[1].length <= ctxTarget.level) {
+      if (/^#{1,6}\s+/.test(lines[i])) {
         insertAt = i;
         break;
       }
+      insertAt = i + 1;
     }
-    lines.splice(insertAt, 0, '', heading, '', body, '');
+    const insertLines = [];
+    if (insertAt > 0 && lines[insertAt - 1].trim()) insertLines.push('');
+    insertLines.push(noteMarkdownLine(noteText));
+    if (insertAt < lines.length && lines[insertAt].trim()) insertLines.push('');
+    lines.splice(insertAt, 0, ...insertLines);
   } else {
+    const canvas = document.getElementById('map-canvas');
+    const rect = canvas.getBoundingClientRect();
+    const localX = (ctxPoint.clientX || rect.left + MAP_PAD) - rect.left;
+    const localY = (ctxPoint.clientY || rect.top + MAP_PAD) - rect.top;
+    const worldX = mapState.tx + localX / mapState.scale;
+    const worldY = mapState.ty + localY / mapState.scale;
     if (editor.value.trim()) lines.push('');
-    lines.push(heading, '', body, '');
+    lines.push(noteMarkdownLine(noteText, worldX, worldY));
   }
 
   editor.value = lines.join('\n').replace(/\n{4,}/g, '\n\n\n');
   localStorage.setItem('docFramework_md', editor.value);
   hideCtx();
   renderMap();
+  if (ctxMode === 'node' && ctxTarget && mapState.tree && mapState.tree.map[ctxTarget.id]) {
+    mapState.tree.map[ctxTarget.id].bodyExpanded = true;
+    drawMap();
+  }
 }
 
 function syncTypeToMd(node) {
@@ -3447,6 +3586,7 @@ function clearEditor() {
     document.getElementById('map-layer').innerHTML = '';
     mapState.nodes = [];
     mapState.tree = null;
+    mapState.notes = [];
   }
 }
 
