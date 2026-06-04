@@ -234,6 +234,7 @@ body {
   z-index: 1;
   will-change: transform;
   transform-origin: 0 0;
+  overflow: visible;
 }
 .map-layout-switch {
   position: absolute;
@@ -746,9 +747,13 @@ body {
 
 <!-- CONTEXT MENU -->
 <div class="ctx-menu" id="ctxMenu">
-  <div class="ctx-item" onclick="addNoteFromContext()">
+  <div class="ctx-item add-note-ctx" onclick="addNoteFromContext()">
     <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.5A1.5 1.5 0 0 1 3.5 0h6.879a1.5 1.5 0 0 1 1.06.44l2.121 2.12A1.5 1.5 0 0 1 14 3.622V14.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 14.5v-13zM10 1.707V3.5a.5.5 0 0 0 .5.5h1.793L10 1.707zM4.5 7a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-7zm0 2.5a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-7zm0 2.5a.5.5 0 0 0 0 1h4a.5.5 0 0 0 0-1h-4z"/></svg>
     Add Note
+  </div>
+  <div class="ctx-item note-only-ctx" onclick="deleteNoteFromContext()">
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5M11 2.5v-1A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H2.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 5.885 16h4.23a2 2 0 0 0 1.994-1.84L12.962 3.5h.538a.5.5 0 0 0 0-1H11zm.958 1-.846 10.58A1 1 0 0 1 10.615 15h-4.23a1 1 0 0 1-.997-.92L4.542 3.5h6.916z"/></svg>
+    删除 Note
   </div>
   <div class="ctx-item node-only-ctx" onclick="toggleNodeType()">
     <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2zm6.5 4.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3a.5.5 0 0 1 1 0z"/></svg>
@@ -1513,6 +1518,7 @@ let mapState = { nodes: [], tree: null, notes: [], scale: 1, tx: 40, ty: 40, can
 let ctxTarget = null;
 let ctxMode = 'node';
 let ctxPoint = {clientX: 0, clientY: 0};
+let noteDrag = {active: false, note: null, group: null, startClientX: 0, startClientY: 0, startX: 0, startY: 0, moved: false};
 let presentState = {active: false, order: [], index: 0, savedCollapse: null};
 
 function getLineOffset(lines, lineIndex) {
@@ -2004,9 +2010,27 @@ function drawMap() {
     const x = Number.isFinite(note.x) ? note.x : MAP_PAD;
     const y = Number.isFinite(note.y) ? note.y : MAP_PAD;
     const rendered = renderNoteStrip(layer, x, y, note.content, {className: 'map-note-strip'});
-    rendered.group.style.cursor = 'text';
+    rendered.group.style.cursor = 'grab';
+    rendered.group.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      hideCtx();
+      noteDrag = {
+        active: true,
+        note,
+        group: rendered.group,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        startX: x,
+        startY: y,
+        moved: false,
+      };
+      rendered.group.style.cursor = 'grabbing';
+    });
     rendered.group.addEventListener('dblclick', (e) => {
       e.stopPropagation();
+      if (noteDrag.moved) return;
       const val = window.prompt('编辑 Note', note.content);
       if (val !== null && val.trim() !== note.content) {
         note.content = val.trim() || 'Note';
@@ -2017,8 +2041,8 @@ function drawMap() {
     rendered.group.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      ctxTarget = null;
-      ctxMode = 'canvas';
+      ctxTarget = note;
+      ctxMode = 'note';
       ctxPoint = {clientX: e.clientX, clientY: e.clientY};
       showCtx(e.clientX, e.clientY);
     });
@@ -2121,6 +2145,19 @@ function noteMarkdownLine(content, x = null, y = null) {
   return note;
 }
 
+function mapWorldPointFromClient(clientX, clientY) {
+  const canvas = document.getElementById('map-canvas');
+  const rect = canvas.getBoundingClientRect();
+  const safeClientX = Number.isFinite(clientX) ? clientX : rect.left + MAP_PAD;
+  const safeClientY = Number.isFinite(clientY) ? clientY : rect.top + MAP_PAD;
+  const localX = safeClientX - rect.left;
+  const localY = safeClientY - rect.top;
+  return {
+    x: mapState.tx + localX / mapState.scale,
+    y: mapState.ty + localY / mapState.scale,
+  };
+}
+
 // ── Sync body text back to Markdown ──
 function syncBodyToMd(node) {
   const editor = document.getElementById('md-editor');
@@ -2158,6 +2195,16 @@ function syncMapNoteToMd(note) {
   if (lineIndex < 0 || lineIndex >= lines.length) return;
   lines[lineIndex] = noteMarkdownLine(note.content, note.x, note.y);
   editor.value = lines.join('\n');
+  localStorage.setItem('docFramework_md', editor.value);
+}
+
+function deleteMapNoteFromMd(note) {
+  const editor = document.getElementById('md-editor');
+  const lines = editor.value.split('\n');
+  const lineIndex = Number.isInteger(note.lineIndex) ? note.lineIndex : -1;
+  if (lineIndex < 0 || lineIndex >= lines.length) return;
+  lines.splice(lineIndex, 1);
+  editor.value = lines.join('\n').replace(/\n{4,}/g, '\n\n\n');
   localStorage.setItem('docFramework_md', editor.value);
 }
 
@@ -2348,12 +2395,38 @@ document.getElementById('map-canvas').addEventListener('mousedown', (e) => {
   drag.startTy = mapState.ty;
 });
 document.addEventListener('mousemove', (e) => {
+  if (noteDrag.active && noteDrag.note && noteDrag.group) {
+    e.preventDefault();
+    const dx = (e.clientX - noteDrag.startClientX) / mapState.scale;
+    const dy = (e.clientY - noteDrag.startClientY) / mapState.scale;
+    const nextX = noteDrag.startX + dx;
+    const nextY = noteDrag.startY + dy;
+    if (Math.abs(e.clientX - noteDrag.startClientX) > 3 || Math.abs(e.clientY - noteDrag.startClientY) > 3) {
+      noteDrag.moved = true;
+    }
+    noteDrag.note.x = nextX;
+    noteDrag.note.y = nextY;
+    noteDrag.group.setAttribute('transform', `translate(${nextX},${nextY})`);
+    return;
+  }
   if (!drag.active) return;
   mapState.tx = drag.startTx - (e.clientX - drag.startX) / mapState.scale;
   mapState.ty = drag.startTy - (e.clientY - drag.startY) / mapState.scale;
   updateTransform();
 });
-document.addEventListener('mouseup', () => { drag.active = false; });
+document.addEventListener('mouseup', () => {
+  if (noteDrag.active) {
+    const movedNote = noteDrag.note;
+    const moved = noteDrag.moved;
+    if (noteDrag.group) noteDrag.group.style.cursor = 'grab';
+    noteDrag = {active: false, note: null, group: null, startClientX: 0, startClientY: 0, startX: 0, startY: 0, moved: false};
+    if (moved && movedNote) {
+      syncMapNoteToMd(movedNote);
+      drawMap();
+    }
+  }
+  drag.active = false;
+});
 
 document.getElementById('map-canvas').addEventListener('wheel', (e) => {
   e.preventDefault();
@@ -2401,8 +2474,14 @@ function showCtx(x, y) {
   const m = document.getElementById('ctxMenu');
   m.style.left = x + 'px';
   m.style.top = y + 'px';
+  m.querySelectorAll('.add-note-ctx').forEach(item => {
+    item.style.display = ctxMode === 'note' ? 'none' : 'flex';
+  });
   m.querySelectorAll('.node-only-ctx').forEach(item => {
     item.style.display = ctxMode === 'node' ? 'flex' : 'none';
+  });
+  m.querySelectorAll('.note-only-ctx').forEach(item => {
+    item.style.display = ctxMode === 'note' ? 'flex' : 'none';
   });
   m.classList.add('open');
 }
@@ -2436,40 +2515,24 @@ function addNoteFromContext() {
   }
   const noteText = normalizeNoteText(text);
   const lines = editor.value.split('\n');
-
-  if (ctxMode === 'node' && ctxTarget && Number.isInteger(ctxTarget.lineStart)) {
-    let insertAt = ctxTarget.lineStart + 1;
-    for (let i = ctxTarget.lineStart + 1; i < lines.length; i++) {
-      if (/^#{1,6}\s+/.test(lines[i])) {
-        insertAt = i;
-        break;
-      }
-      insertAt = i + 1;
-    }
-    const insertLines = [];
-    if (insertAt > 0 && lines[insertAt - 1].trim()) insertLines.push('');
-    insertLines.push(noteMarkdownLine(noteText));
-    if (insertAt < lines.length && lines[insertAt].trim()) insertLines.push('');
-    lines.splice(insertAt, 0, ...insertLines);
-  } else {
-    const canvas = document.getElementById('map-canvas');
-    const rect = canvas.getBoundingClientRect();
-    const localX = (ctxPoint.clientX || rect.left + MAP_PAD) - rect.left;
-    const localY = (ctxPoint.clientY || rect.top + MAP_PAD) - rect.top;
-    const worldX = mapState.tx + localX / mapState.scale;
-    const worldY = mapState.ty + localY / mapState.scale;
-    if (editor.value.trim()) lines.push('');
-    lines.push(noteMarkdownLine(noteText, worldX, worldY));
-  }
+  const point = mapWorldPointFromClient(ctxPoint.clientX, ctxPoint.clientY);
+  if (editor.value.trim()) lines.push('');
+  lines.push(noteMarkdownLine(noteText, point.x, point.y));
 
   editor.value = lines.join('\n').replace(/\n{4,}/g, '\n\n\n');
   localStorage.setItem('docFramework_md', editor.value);
   hideCtx();
   renderMap();
-  if (ctxMode === 'node' && ctxTarget && mapState.tree && mapState.tree.map[ctxTarget.id]) {
-    mapState.tree.map[ctxTarget.id].bodyExpanded = true;
-    drawMap();
-  }
+}
+
+function deleteNoteFromContext() {
+  if (ctxMode !== 'note' || !ctxTarget) return;
+  deleteMapNoteFromMd(ctxTarget);
+  ctxTarget = null;
+  ctxMode = 'canvas';
+  hideCtx();
+  renderMap();
+  showToast('已删除 Note');
 }
 
 function syncTypeToMd(node) {
