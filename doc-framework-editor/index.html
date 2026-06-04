@@ -746,11 +746,15 @@ body {
 
 <!-- CONTEXT MENU -->
 <div class="ctx-menu" id="ctxMenu">
-  <div class="ctx-item" onclick="toggleNodeType()">
+  <div class="ctx-item" onclick="addNoteFromContext()">
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M2 1.5A1.5 1.5 0 0 1 3.5 0h6.879a1.5 1.5 0 0 1 1.06.44l2.121 2.12A1.5 1.5 0 0 1 14 3.622V14.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 14.5v-13zM10 1.707V3.5a.5.5 0 0 0 .5.5h1.793L10 1.707zM4.5 7a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-7zm0 2.5a.5.5 0 0 0 0 1h7a.5.5 0 0 0 0-1h-7zm0 2.5a.5.5 0 0 0 0 1h4a.5.5 0 0 0 0-1h-4z"/></svg>
+    Add Note
+  </div>
+  <div class="ctx-item node-only-ctx" onclick="toggleNodeType()">
     <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M2 0a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V2a2 2 0 0 0-2-2H2zm6.5 4.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3a.5.5 0 0 1 1 0z"/></svg>
     切换类型 (concept ↔ task)
   </div>
-  <div class="ctx-item" onclick="toggleCollapse()">
+  <div class="ctx-item node-only-ctx" onclick="toggleCollapse()">
     <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M1 8a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 0 1h-13A.5.5 0 0 1 1 8z"/></svg>
     展开 / 收起
   </div>
@@ -1057,6 +1061,8 @@ const NODE_TEXT_MAX_CHARS = 18;
 const BODY_TEXT_WRAP_CHARS = 26;
 const NODE_TEXT_PAD_X = 10;
 const NODE_TEXT_RIGHT_PAD = 8;
+const NODE_TITLE_LINE_H = 15;
+const NODE_TITLE_PAD_Y = 8;
 const ROOT_GAP = 40;
 const FISH_SPINE_MARGIN = 28;
 const FISH_BRANCH_GAP = 72;
@@ -1143,7 +1149,7 @@ function nodeBodySpan(node) {
 }
 
 function nodeOwnH(node) {
-  return NODE_H + nodeBodySpan(node);
+  return nodeHeadingH(node) + nodeBodySpan(node);
 }
 
 function nodeUpperH(node) {
@@ -1151,7 +1157,7 @@ function nodeUpperH(node) {
 }
 
 function nodeLowerH(node) {
-  return NODE_H + (bodyRendersBelow(node) ? nodeBodySpan(node) : 0);
+  return nodeHeadingH(node) + (bodyRendersBelow(node) ? nodeBodySpan(node) : 0);
 }
 
 function childrenBlockH(node) {
@@ -1184,6 +1190,23 @@ function wrapTextByWidth(text = '', maxWidth = 180, fontSize = 11) {
     out.push(line || '');
   });
   return out.length ? out : [''];
+}
+
+function nodeTitleMaxWidth(node) {
+  let titleMaxW = NODE_W - NODE_TEXT_PAD_X - NODE_TEXT_RIGHT_PAD;
+  if (node.children && node.children.length > 0) titleMaxW -= 18;
+  if (node.body && node.body.length > 0) titleMaxW -= 18;
+  if (node.isTask) titleMaxW -= 34;
+  return Math.max(64, titleMaxW);
+}
+
+function getNodeTitleLines(node) {
+  const maxW = nodeTitleMaxWidth(node);
+  return wrapTextByWidth(node.title, maxW, 12);
+}
+
+function nodeHeadingH(node) {
+  return Math.max(NODE_H, NODE_TITLE_PAD_Y * 2 + getNodeTitleLines(node).length * NODE_TITLE_LINE_H);
 }
 
 function getBodyTextLines(text = '') {
@@ -1247,7 +1270,7 @@ function getBodyAnchor(node) {
   }
   return {
     x: node.x + BODY_INDENT,
-    y: node.y + NODE_H + BODY_STACK_GAP,
+    y: node.y + nodeHeadingH(node) + BODY_STACK_GAP,
   };
 }
 
@@ -1255,7 +1278,7 @@ function getNodeBounds(node) {
   let minX = node.x;
   let minY = node.y;
   let maxX = node.x + NODE_W;
-  let maxY = node.y + NODE_H;
+  let maxY = node.y + nodeHeadingH(node);
 
   if (hasVisibleBody(node)) {
     const anchor = getBodyAnchor(node);
@@ -1388,7 +1411,7 @@ function layoutFishboneRoots(roots) {
   roots.forEach(root => {
     const spineY = sectionY + FISH_ROOT_TOP_PAD;
     root.x = 0;
-    root.y = spineY - NODE_H / 2;
+    root.y = spineY - nodeHeadingH(root) / 2;
     root._fish = {spineY, spineEnd: root.x + NODE_W + 160};
     const rootBounds = getNodeBounds(root);
 
@@ -1432,6 +1455,7 @@ function layoutFishboneRoots(roots) {
 // ══════════════════════════════════════════════
 let mapState = { nodes: [], tree: null, scale: 1, tx: 40, ty: 40, canvasW: 1, canvasH: 1, layoutMode: 'mindmap', selectedNodeId: null };
 let ctxTarget = null;
+let ctxMode = 'node';
 let presentState = {active: false, order: [], index: 0, savedCollapse: null};
 
 function getLineOffset(lines, lineIndex) {
@@ -1642,13 +1666,13 @@ function drawMap() {
     const {border} = node.isTask ? {border: TASK_BORDER} : getNodeColor(map, node);
     if (mapState.layoutMode === 'fishbone' && parent.level === 1) {
       const joinX = node.x - 26;
-      const y2 = node.y + NODE_H / 2;
+      const y2 = node.y + nodeHeadingH(node) / 2;
       path.setAttribute('d', `M${joinX},${parent._fish.spineY} L${node.x},${y2}`);
     } else {
       const x1 = parent.x + NODE_W;
-      const y1 = parent.y + NODE_H / 2;
+      const y1 = parent.y + nodeHeadingH(parent) / 2;
       const x2 = node.x;
-      const y2 = node.y + NODE_H / 2;
+      const y2 = node.y + nodeHeadingH(node) / 2;
       const cx = (x1 + x2) / 2;
       path.setAttribute('d', `M${x1},${y1} C${cx},${y1} ${cx},${y2} ${x2},${y2}`);
     }
@@ -1666,6 +1690,8 @@ function drawMap() {
   for (const node of visible) {
     const presentVisual = getPresentationVisual(node);
     const isSelected = mapState.selectedNodeId === node.id;
+    const headingH = nodeHeadingH(node);
+    const titleLines = getNodeTitleLines(node);
     const colors = node.isTask
       ? {bg: TASK_BG, border: TASK_BORDER, color: TASK_TEXT}
       : getNodeColor(map, node);
@@ -1675,7 +1701,7 @@ function drawMap() {
     if (!presentVisual.revealed) g.style.pointerEvents = 'none';
     const rect = svgEl('rect', {
       x: 0, y: 0, rx: 6, ry: 6,
-      width: NODE_W, height: NODE_H,
+      width: NODE_W, height: headingH,
       fill: colors.bg,
       stroke: presentVisual.current ? '#d94b4b' : (isSelected ? '#ff7f50' : colors.border),
       'stroke-width': presentVisual.current ? 3 : (isSelected ? 2.4 : 1.5),
@@ -1686,17 +1712,17 @@ function drawMap() {
     rect.style.cursor = 'pointer';
     g.appendChild(rect);
 
-    let titleMaxW = NODE_W - NODE_TEXT_PAD_X - NODE_TEXT_RIGHT_PAD;
-    if (node.children.length > 0) titleMaxW -= 18;
-    if (node.body && node.body.length > 0) titleMaxW -= 18;
-    if (node.isTask) titleMaxW -= 34;
-    const titleText = addSvgText(g, NODE_TEXT_PAD_X, NODE_H / 2, truncateSvgTextByWidth(node.title, titleMaxW, 12), {
-      fill: colors.color,
-      fontSize: 12,
-      fontWeight: 500,
+    const titleGroup = svgEl('g', {});
+    const titleStartY = (headingH - titleLines.length * NODE_TITLE_LINE_H) / 2 + NODE_TITLE_LINE_H / 2;
+    titleLines.forEach((line, li) => {
+      addSvgText(titleGroup, NODE_TEXT_PAD_X, titleStartY + li * NODE_TITLE_LINE_H, line, {
+        fill: colors.color,
+        fontSize: 12,
+        fontWeight: 500,
+      });
     });
-    titleText.style.cursor = 'text';
-    titleText.addEventListener('dblclick', (e) => {
+    titleGroup.style.cursor = 'text';
+    titleGroup.addEventListener('dblclick', (e) => {
       e.stopPropagation();
       const val = window.prompt('编辑标题', node.title);
       if (val !== null) {
@@ -1708,6 +1734,7 @@ function drawMap() {
         }
       }
     });
+    g.appendChild(titleGroup);
 
     if (node.isTask) {
       const badgeW = 28;
@@ -1728,7 +1755,7 @@ function drawMap() {
 
     let ctlX = NODE_W - 18;
     if (node.children.length > 0) {
-      const tog = svgEl('g', {transform: `translate(${ctlX},10)`, class: 'node-ctl'});
+      const tog = svgEl('g', {transform: `translate(${ctlX},${Math.max(10, headingH / 2 - 7)})`, class: 'node-ctl'});
       const togBg = svgEl('circle', {
         cx: 7, cy: 7, r: 7,
         fill: 'rgba(255,255,255,.68)',
@@ -1753,7 +1780,7 @@ function drawMap() {
     }
 
     if (node.body && node.body.length > 0) {
-      const bodyCtl = svgEl('g', {transform: `translate(${ctlX - 1},7)`, class: 'node-ctl'});
+      const bodyCtl = svgEl('g', {transform: `translate(${ctlX - 1},${Math.max(7, headingH / 2 - 10)})`, class: 'node-ctl'});
       bodyCtl.appendChild(svgEl('line', {
         x1: 8, y1: 11, x2: 8, y2: 18,
         stroke: '#d94b4b',
@@ -1784,6 +1811,7 @@ function drawMap() {
     g.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       ctxTarget = node;
+      ctxMode = 'node';
       showCtx(e.clientX, e.clientY);
     });
     g.addEventListener('click', (e) => {
@@ -1793,7 +1821,7 @@ function drawMap() {
     layer.appendChild(g);
 
     maxX = Math.max(maxX, node.x + NODE_W + 60);
-    maxY = Math.max(maxY, node.y + NODE_H + 60);
+    maxY = Math.max(maxY, node.y + headingH + 60);
 
     // -- Body node (rendered below heading as one box) --
     if (hasVisibleBody(node) && presentVisual.revealed) {
@@ -1807,7 +1835,7 @@ function drawMap() {
       // connector from heading to body box
       const bc = document.createElementNS('http://www.w3.org/2000/svg','line');
       bc.setAttribute('x1', node.x + NODE_W / 2);
-      bc.setAttribute('y1', bodyAbove ? node.y : node.y + NODE_H);
+      bc.setAttribute('y1', bodyAbove ? node.y : node.y + headingH);
       bc.setAttribute('x2', bodyX + BODY_W / 2);
       bc.setAttribute('y2', bodyAbove ? bodyY + bodyH : bodyY);
       bc.setAttribute('stroke', bColors.border);
@@ -1881,6 +1909,13 @@ function drawMap() {
       bodyGroup.addEventListener('click', (e) => {
         e.stopPropagation();
         selectMapNode(node, true);
+      });
+      bodyGroup.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        ctxTarget = node;
+        ctxMode = 'node';
+        showCtx(e.clientX, e.clientY);
       });
       layer.appendChild(bodyGroup);
 
@@ -2155,6 +2190,7 @@ function expandAll() {
   if (!mapState.tree) return;
   Object.values(mapState.tree.map).forEach(n => {
     n.collapsed = false;
+    if (n.body && n.body.length > 0) n.bodyExpanded = true;
   });
   drawMap();
 }
@@ -2174,6 +2210,7 @@ function collapseToL2() {
 let drag = {active: false, startX: 0, startY: 0, startTx: 0, startTy: 0};
 
 document.getElementById('map-canvas').addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
   if (e.target.closest && e.target.closest('.node-svg, .body-svg, .node-ctl, #mapLayoutSwitch')) return;
   drag.active = true;
   drag.startX = e.clientX;
@@ -2198,6 +2235,14 @@ document.getElementById('map-canvas').addEventListener('wheel', (e) => {
   const factor = e.deltaY > 0 ? 0.9 : 1.1;
   setScaleAt(mapState.scale * factor, mouseX, mouseY);
 }, {passive: false});
+
+document.getElementById('map-canvas').addEventListener('contextmenu', (e) => {
+  if (e.target.closest && e.target.closest('.node-svg, .body-svg, .node-ctl, #mapLayoutSwitch')) return;
+  e.preventDefault();
+  ctxTarget = null;
+  ctxMode = 'canvas';
+  showCtx(e.clientX, e.clientY);
+});
 
 document.addEventListener('keydown', (e) => {
   if (!presentState.active) return;
@@ -2226,6 +2271,9 @@ function showCtx(x, y) {
   const m = document.getElementById('ctxMenu');
   m.style.left = x + 'px';
   m.style.top = y + 'px';
+  m.querySelectorAll('.node-only-ctx').forEach(item => {
+    item.style.display = ctxMode === 'node' ? 'flex' : 'none';
+  });
   m.classList.add('open');
 }
 function hideCtx() { document.getElementById('ctxMenu').classList.remove('open'); }
@@ -2247,6 +2295,42 @@ function toggleCollapse() {
   ctxTarget.collapsed = !ctxTarget.collapsed;
   drawMap();
   hideCtx();
+}
+
+function addNoteFromContext() {
+  const editor = document.getElementById('md-editor');
+  const title = window.prompt('Add Note', 'Note');
+  if (title === null) {
+    hideCtx();
+    return;
+  }
+  const cleanTitle = title.trim() || 'Note';
+  const lines = editor.value.split('\n');
+  const insertLevel = ctxMode === 'node' && ctxTarget
+    ? Math.min(6, ctxTarget.level + 1)
+    : 2;
+  const heading = '#'.repeat(insertLevel) + ' ' + cleanTitle;
+  const body = '在这里补充章节要点。';
+
+  if (ctxMode === 'node' && ctxTarget && Number.isInteger(ctxTarget.lineStart)) {
+    let insertAt = lines.length;
+    for (let i = ctxTarget.lineStart + 1; i < lines.length; i++) {
+      const m = lines[i].match(/^(#{1,6})\s+/);
+      if (m && m[1].length <= ctxTarget.level) {
+        insertAt = i;
+        break;
+      }
+    }
+    lines.splice(insertAt, 0, '', heading, '', body, '');
+  } else {
+    if (editor.value.trim()) lines.push('');
+    lines.push(heading, '', body, '');
+  }
+
+  editor.value = lines.join('\n').replace(/\n{4,}/g, '\n\n\n');
+  localStorage.setItem('docFramework_md', editor.value);
+  hideCtx();
+  renderMap();
 }
 
 function syncTypeToMd(node) {
