@@ -96,8 +96,19 @@ body {
   border-color: var(--accent);
   color: #fff;
   font-weight: 500;
+  box-shadow: 0 2px 8px rgba(201, 83, 106, .18);
 }
 .tb-btn.primary:hover { background: #b8425a; }
+.tb-btn.import {
+  background: #f6fbf7;
+  border-color: #9fc6a6;
+  color: #3f7650;
+}
+.tb-btn.import:hover {
+  background: #e8f5eb;
+  border-color: #70ad7c;
+  color: #2f6841;
+}
 .tb-btn svg { flex-shrink: 0; }
 
 /* ── MAIN LAYOUT ── */
@@ -655,13 +666,13 @@ body {
     <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M8 4a.5.5 0 0 1 .5.5v3h3a.5.5 0 0 1 0 1h-3v3a.5.5 0 0 1-1 0v-3h-3a.5.5 0 0 1 0-1h3v-3A.5.5 0 0 1 8 4z"/><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm0-1A7 7 0 1 1 8 1a7 7 0 0 1 0 14z"/></svg>
     生成架构图
   </button>
-  <button class="tb-btn primary" onclick="openExportModal()">
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/></svg>
-    导出 Excel
-  </button>
-  <button class="tb-btn" onclick="triggerExcelImport()">
-    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M.5 14.5A1.5 1.5 0 0 0 2 16h12a1.5 1.5 0 0 0 1.5-1.5v-4a.5.5 0 0 0-1 0v4a.5.5 0 0 1-.5.5H2a.5.5 0 0 1-.5-.5v-4a.5.5 0 0 0-1 0v4z"/><path d="M7.646.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 1.707V11.5a.5.5 0 0 1-1 0V1.707L5.354 3.854a.5.5 0 1 1-.708-.708l3-3z"/></svg>
+  <button class="tb-btn import" onclick="triggerExcelImport()">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M14 14V9.5a.5.5 0 0 1 1 0V14a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9.5a.5.5 0 0 1 1 0V14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1z"/><path d="M7.5.5a.5.5 0 0 1 1 0v8.793l2.146-2.147a.5.5 0 0 1 .708.708l-3 3a.5.5 0 0 1-.708 0l-3-3a.5.5 0 1 1 .708-.708L7.5 9.293V.5z"/></svg>
     导入 Excel
+  </button>
+  <button class="tb-btn primary" onclick="openExportModal()">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M14 14V9.5a.5.5 0 0 1 1 0V14a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V9.5a.5.5 0 0 1 1 0V14a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1z"/><path d="M7.5 10.5a.5.5 0 0 0 1 0V1.707l2.146 2.147a.5.5 0 0 0 .708-.708l-3-3a.5.5 0 0 0-.708 0l-3 3a.5.5 0 1 0 .708.708L7.5 1.707V10.5z"/></svg>
+    导出 Excel
   </button>
   <input id="excelImportInput" type="file" accept=".xlsx,.xls,.xlsm" style="display:none" onchange="handleExcelImport(event)">
 </div>
@@ -2599,7 +2610,7 @@ const ALL_FIELDS = [
   {key:'version',    label:'版本',         tag:'版本*',         alwaysOn:false, defaultOn:true,  valueType:'input',   defaultVal:'1',                      hint:''},
   {key:'aggregate',  label:'聚合',         tag:'聚合',          alwaysOn:false, defaultOn:false, valueType:'options', options:['新增的聚合','复用的聚合','更新的聚合'], defaultVal:'', hint:''},
   {key:'keyPoints',  label:'章节要点',     tag:'章节要点*',     alwaysOn:false, defaultOn:false, valueType:'input',   defaultVal:'',                        hint:''},
-  {key:'frameworkSummary', label:'导出框架内概要', tag:'框架内概要', alwaysOn:false, defaultOn:false, valueType:'computed', defaultVal:'', hint:'自动导出架构图正文框中的概要纯文本。'},
+  {key:'frameworkSummary', label:'导出框架内概要', tag:'章节要点*', alwaysOn:false, defaultOn:false, valueType:'computed', defaultVal:'', hint:'开启后，将架构图正文框中的概要纯文本写入 Excel【章节要点】列。'},
   {key:'competitor', label:'对应友商',     tag:'对应友商',      alwaysOn:false, defaultOn:false, valueType:'input',   defaultVal:'',                        hint:''},
   {key:'compDetail', label:'友商借鉴内容', tag:'具体友商可借鉴内容', alwaysOn:false, defaultOn:false, valueType:'input', defaultVal:'',                   hint:''},
   {key:'materials',  label:'需提供的素材', tag:'需提供的素材',  alwaysOn:false, defaultOn:false, valueType:'input',   defaultVal:'',                        hint:''},
@@ -2618,7 +2629,7 @@ const PRESETS = [
   {label:'责任人', key:'owner'},
   {label:'更新类型', key:'updateType'},
   {label:'章节要点', key:'keyPoints'},
-  {label:'框架内概要', key:'frameworkSummary'},
+  {label:'导出概要', key:'frameworkSummary'},
   {label:'中文进度', key:'progress'},
 ];
 
@@ -3698,7 +3709,6 @@ function buildSheetFramework(nodes, enabledFields) {
     {key:'version',     label:'版本'},
     {key:'aggregate',   label:'聚合'},
     {key:'keyPoints',   label:'章节要点'},
-    {key:'frameworkSummary', label:'框架内概要'},
     {key:'competitor',  label:'对应友商'},
     {key:'compDetail',  label:'具体友商可借鉴内容'},
     {key:'materials',   label:'需提供的素材'},
@@ -3720,6 +3730,7 @@ function buildSheetFramework(nodes, enabledFields) {
   // enabledFields map
   const enabledMap = {};
   enabledFields.forEach(f => { enabledMap[f.key] = f; });
+  const exportFrameworkSummary = !!enabledMap.frameworkSummary;
 
   // 样式
   const sHdr = makeStyle({bold:true, sz:10, color:C.white, bg:C.headerDark, align:'center'});
@@ -3757,11 +3768,13 @@ function buildSheetFramework(nodes, enabledFields) {
           val = node.isTask
             ? (fs.options.find(o => /task/i.test(o)) || 'Task')
             : (fs.options.find(o => /concept/i.test(o)) || 'Concept');
-        } else if (col.key === 'frameworkSummary') {
+        } else if (col.key === 'keyPoints' && exportFrameworkSummary) {
           val = getFrameworkSummaryText(node);
         } else {
           val = fs.value || '';
         }
+      } else if (col.key === 'keyPoints' && exportFrameworkSummary) {
+        val = getFrameworkSummaryText(node);
       }
       wc(ws, r, ci, val, node.level === 1 ? sMap : sBody);
     });
@@ -4012,7 +4025,10 @@ function buildFrameworkOptionSheet(workbook, columns) {
   return map;
 }
 
-function getFrameworkFieldValue(node, rowIndex, col, fs) {
+function getFrameworkFieldValue(node, rowIndex, col, fs, exportFrameworkSummary = false) {
+  if (col.key === 'keyPoints' && exportFrameworkSummary) {
+    return getFrameworkSummaryText(node);
+  }
   if (!fs) return '';
   if (col.key === 'infoType') {
     if (node.parentId === null) return rowIndex === 0 ? 'Parent Map' : 'Child Map';
@@ -4020,9 +4036,6 @@ function getFrameworkFieldValue(node, rowIndex, col, fs) {
   }
   if (col.key === 'updateType' && !fs.value) {
     return node.parentId === null ? 'New Map' : 'New Topic';
-  }
-  if (col.key === 'frameworkSummary') {
-    return getFrameworkSummaryText(node);
   }
   return fs.value || '';
 }
@@ -4120,7 +4133,6 @@ function buildFrameworkSheetExcel(workbook, nodes, enabledFields) {
     {key:'version',     label:'版本*'},
     {key:'aggregate',   label:'聚合'},
     {key:'keyPoints',   label:'章节要点*'},
-    {key:'frameworkSummary', label:'框架内概要'},
     {key:'competitor',  label:'对应友商'},
     {key:'compDetail',  label:'具体友商可借鉴内容'},
     {key:'materials',   label:'需提供的素材'},
@@ -4135,9 +4147,10 @@ function buildFrameworkSheetExcel(workbook, nodes, enabledFields) {
   const customFields = enabledFields.filter(f => f.isCustom).map(f => ({key: f.key, label: f.label, fs: f}));
   const enabledMap = {};
   enabledFields.forEach(f => { enabledMap[f.key] = f; });
+  const exportFrameworkSummary = !!enabledMap.frameworkSummary;
   const extraCols = fixedExtraCols
-    .filter(col => enabledMap[col.key])
-    .map(col => ({...col, fs: enabledMap[col.key]}))
+    .filter(col => enabledMap[col.key] || (col.key === 'keyPoints' && exportFrameworkSummary))
+    .map(col => ({...col, fs: enabledMap[col.key] || null}))
     .concat(customFields);
   const allCols = dirCols.concat(extraCols);
 
@@ -4164,7 +4177,7 @@ function buildFrameworkSheetExcel(workbook, nodes, enabledFields) {
 
     extraCols.forEach((col, extraIdx) => {
       const cell = ws.getCell(rowNum, dirCols.length + extraIdx + 1);
-      const value = getFrameworkFieldValue(node, idx, col, col.fs);
+      const value = getFrameworkFieldValue(node, idx, col, col.fs, exportFrameworkSummary);
       rowValues.push(value);
       if (col.key === 'version' && value !== '' && !isNaN(Number(value))) {
         setExcelCell(cell, Number(value), style);
