@@ -502,6 +502,12 @@ body {
   font-size: 11px; font-family: inherit; width: 100%;
 }
 .field-input:focus { outline: none; border-color: var(--accent2); }
+.field-computed-hint {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text3);
+  padding: 2px 0;
+}
 
 /* Options editor */
 .options-editor { display: flex; flex-direction: column; gap: 3px; }
@@ -653,6 +659,11 @@ body {
     <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/></svg>
     导出 Excel
   </button>
+  <button class="tb-btn" onclick="triggerExcelImport()">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor"><path d="M.5 14.5A1.5 1.5 0 0 0 2 16h12a1.5 1.5 0 0 0 1.5-1.5v-4a.5.5 0 0 0-1 0v4a.5.5 0 0 1-.5.5H2a.5.5 0 0 1-.5-.5v-4a.5.5 0 0 0-1 0v4z"/><path d="M7.646.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1-.708.708L8.5 1.707V11.5a.5.5 0 0 1-1 0V1.707L5.354 3.854a.5.5 0 1 1-.708-.708l3-3z"/></svg>
+    导入 Excel
+  </button>
+  <input id="excelImportInput" type="file" accept=".xlsx,.xls,.xlsm" style="display:none" onchange="handleExcelImport(event)">
 </div>
 
 <!-- MAIN -->
@@ -2588,6 +2599,7 @@ const ALL_FIELDS = [
   {key:'version',    label:'版本',         tag:'版本*',         alwaysOn:false, defaultOn:true,  valueType:'input',   defaultVal:'1',                      hint:''},
   {key:'aggregate',  label:'聚合',         tag:'聚合',          alwaysOn:false, defaultOn:false, valueType:'options', options:['新增的聚合','复用的聚合','更新的聚合'], defaultVal:'', hint:''},
   {key:'keyPoints',  label:'章节要点',     tag:'章节要点*',     alwaysOn:false, defaultOn:false, valueType:'input',   defaultVal:'',                        hint:''},
+  {key:'frameworkSummary', label:'导出框架内概要', tag:'框架内概要', alwaysOn:false, defaultOn:false, valueType:'computed', defaultVal:'', hint:'自动导出架构图正文框中的概要纯文本。'},
   {key:'competitor', label:'对应友商',     tag:'对应友商',      alwaysOn:false, defaultOn:false, valueType:'input',   defaultVal:'',                        hint:''},
   {key:'compDetail', label:'友商借鉴内容', tag:'具体友商可借鉴内容', alwaysOn:false, defaultOn:false, valueType:'input', defaultVal:'',                   hint:''},
   {key:'materials',  label:'需提供的素材', tag:'需提供的素材',  alwaysOn:false, defaultOn:false, valueType:'input',   defaultVal:'',                        hint:''},
@@ -2606,8 +2618,19 @@ const PRESETS = [
   {label:'责任人', key:'owner'},
   {label:'更新类型', key:'updateType'},
   {label:'章节要点', key:'keyPoints'},
+  {label:'框架内概要', key:'frameworkSummary'},
   {label:'中文进度', key:'progress'},
 ];
+
+function getFrameworkSummaryText(node) {
+  if (!node || !Array.isArray(node.body) || node.body.length === 0) return '';
+  return node.body.map(item => {
+    if (!item) return '';
+    if (item.type === 'text' || item.type === 'note') return item.content || '';
+    if (item.type === 'image') return item.alt ? `图片：${item.alt}` : '';
+    return item.content || '';
+  }).map(text => String(text).trim()).filter(Boolean).join('\n');
+}
 
 // Runtime state — persisted across modal opens within session
 let fieldState = [];
@@ -2709,6 +2732,16 @@ function buildFieldRow(fs, idx) {
   const configArea = document.createElement('div');
   configArea.className = 'field-config-area' + (fs.enabled ? '' : ' collapsed');
 
+  if (fs.valueType === 'computed' || fs.currentType === 'computed') {
+    const hint = document.createElement('div');
+    hint.className = 'field-computed-hint';
+    hint.textContent = fs.hint || '自动从当前 Markdown 内容计算，导出时写入 Excel。';
+    configArea.appendChild(hint);
+    row.appendChild(configArea);
+    attachFieldRowDragHandlers(row, idx);
+    return row;
+  }
+
   // Type selector row
   const cfgRow1 = document.createElement('div');
   cfgRow1.className = 'field-config-row';
@@ -2799,7 +2832,12 @@ function buildFieldRow(fs, idx) {
     row.appendChild(delBtn);
   }
 
-  // ── Drag & drop ──
+  attachFieldRowDragHandlers(row, idx);
+
+  return row;
+}
+
+function attachFieldRowDragHandlers(row, idx) {
   row.addEventListener('dragstart', (e) => {
     dragSrc = idx;
     e.dataTransfer.effectAllowed = 'move';
@@ -2824,8 +2862,6 @@ function buildFieldRow(fs, idx) {
     dragSrc = null;
     renderExportModal();
   });
-
-  return row;
 }
 
 function addCustomField(grid) {
@@ -2872,6 +2908,567 @@ function addCustomField(grid) {
     if (e.key === 'Enter') confirmBtn.click();
     if (e.key === 'Escape') cancelBtn.click();
   });
+}
+
+// ══════════════════════════════════════════════
+//  EXCEL IMPORT — 从历史需求分析表生成 Markdown 框架
+// ══════════════════════════════════════════════
+const DIR_HEADER_ALIASES = [
+  {kind:'map', labels:['map', 'root', '根目录', '总目录', '框架图', '导图']},
+  {kind:'cn', level:1, labels:['一级目录', '一级标题', '一级章节', '一级', 'l1', 'h1']},
+  {kind:'cn', level:2, labels:['二级目录', '二级标题', '二级章节', '二级', 'l2', 'h2']},
+  {kind:'cn', level:3, labels:['三级目录', '三级标题', '三级章节', '三级', 'l3', 'h3']},
+  {kind:'cn', level:4, labels:['四级目录', '四级标题', '四级章节', '四级', 'l4', 'h4']},
+  {kind:'cn', level:5, labels:['五级目录', '五级标题', '五级章节', '五级', 'l5', 'h5']},
+  {kind:'cn', level:6, labels:['六级目录', '六级标题', '六级章节', '六级', 'l6', 'h6']},
+];
+
+const LEVEL_HEADER_ALIASES = ['层级', '标题层级', 'md层级', 'markdown层级', '目录层级', '级别', 'level', 'headinglevel', 'hlevel'];
+const TITLE_HEADER_ALIASES = ['标题', '目录标题', '章节标题', '名称', 'topic', 'topic名称', '主题', '节点', '节点标题', 'title'];
+const MARKDOWN_HEADER_ALIASES = ['markdown', 'md', 'md标题', 'markdown标题', '大纲', '框架', '框架内容'];
+const SUMMARY_HEADER_ALIASES = ['章节要点', '章节概要', '章节内容要点', 'keypoints'];
+const SKIP_IMPORT_FIELD_HEADERS = ['序号', '编号', 'id', 'index', 'no', '序列'];
+
+function triggerExcelImport() {
+  const input = document.getElementById('excelImportInput');
+  if (!input) return;
+  input.value = '';
+  input.click();
+}
+
+async function handleExcelImport(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  if (!window.XLSX) {
+    showToast('导入失败：XLSX 未加载完成');
+    return;
+  }
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, {type:'array', cellDates:true, raw:false});
+    const result = importWorkbookToMarkdown(workbook);
+    if (!result || !result.markdown.trim()) {
+      showToast('未识别到可导入的 Markdown 层级');
+      return;
+    }
+
+    const editor = document.getElementById('md-editor');
+    editor.value = result.markdown;
+    localStorage.setItem('docFramework_md', editor.value);
+    applyImportedFieldConfig(result.fieldConfig);
+    renderMap();
+    showToast(`已导入 ${result.nodeCount} 个节点，字段 ${result.fieldCount} 个`);
+  } catch (err) {
+    console.error(err);
+    showToast('导入失败：' + (err && err.message ? err.message : err));
+  } finally {
+    event.target.value = '';
+  }
+}
+
+function importWorkbookToMarkdown(workbook) {
+  const sheetNames = getVisibleSheetNames(workbook);
+  let best = null;
+
+  sheetNames.forEach(name => {
+    const sheet = workbook.Sheets[name];
+    if (!sheet || !sheet['!ref']) return;
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      defval: '',
+      raw: false,
+      blankrows: false,
+    });
+    const candidate = analyzeImportRows(rows, name);
+    if (candidate && (!best || candidate.score > best.score)) best = candidate;
+  });
+
+  if (!best || !best.markdown.trim()) return null;
+  return best;
+}
+
+function getVisibleSheetNames(workbook) {
+  const meta = workbook.Workbook && workbook.Workbook.Sheets ? workbook.Workbook.Sheets : [];
+  return workbook.SheetNames.filter((name, idx) => {
+    const sheetMeta = meta.find(item => item.name === name) || meta[idx];
+    return !sheetMeta || !sheetMeta.Hidden;
+  });
+}
+
+function analyzeImportRows(rows, sheetName) {
+  const trimmedRows = rows
+    .map(row => row.map(cell => normalizeCellText(cell)))
+    .filter(row => row.some(Boolean));
+  if (trimmedRows.length === 0) return null;
+
+  const headerInfo = findImportHeaderRow(trimmedRows);
+  const markdownOnly = buildMarkdownFromMarkdownColumn(trimmedRows, -1, 0, null);
+  if (!headerInfo && markdownOnly.nodeCount > 0) {
+    return {
+      sheetName,
+      score: 20 + markdownOnly.nodeCount,
+      markdown: markdownOnly.markdown,
+      nodeCount: markdownOnly.nodeCount,
+      fieldConfig: {headers: [], rows: [], headerRowIndex: -1, usedColumnIndexes: new Set()},
+      fieldCount: 0,
+    };
+  }
+  if (!headerInfo) return null;
+
+  const headerRow = trimmedRows[headerInfo.rowIndex];
+  const dataRows = trimmedRows.slice(headerInfo.rowIndex + 1);
+  const columns = identifyImportColumns(headerRow);
+  let buildResult = null;
+
+  if (columns.dirCols.length > 0) {
+    buildResult = buildMarkdownFromDirectoryColumns(dataRows, columns.dirCols, columns.summaryCol);
+  }
+  if ((!buildResult || buildResult.nodeCount === 0) && columns.levelCol !== null && columns.titleCol !== null) {
+    buildResult = buildMarkdownFromLevelTitleColumns(dataRows, columns.levelCol, columns.titleCol, columns.summaryCol);
+  }
+  if ((!buildResult || buildResult.nodeCount === 0) && columns.markdownCol !== null) {
+    buildResult = buildMarkdownFromMarkdownColumn(dataRows, headerInfo.rowIndex, columns.markdownCol, columns.summaryCol);
+  }
+  if (!buildResult || buildResult.nodeCount === 0) return null;
+
+  const usedColumnIndexes = new Set([
+    ...columns.dirCols.map(col => col.idx),
+    columns.levelCol,
+    columns.titleCol,
+    columns.markdownCol,
+  ].filter(idx => idx !== null && idx !== undefined && idx >= 0));
+
+  const fieldConfig = {
+    headers: headerRow,
+    rows: dataRows,
+    headerRowIndex: headerInfo.rowIndex,
+    usedColumnIndexes,
+    summaryCol: columns.summaryCol,
+  };
+
+  const fieldCount = countImportedFields(fieldConfig);
+  return {
+    sheetName,
+    score: headerInfo.score + columns.score + buildResult.nodeCount + fieldCount,
+    markdown: buildResult.markdown,
+    nodeCount: buildResult.nodeCount,
+    fieldConfig,
+    fieldCount,
+  };
+}
+
+function findImportHeaderRow(rows) {
+  let best = null;
+  const limit = Math.min(rows.length, 30);
+  for (let r = 0; r < limit; r++) {
+    const row = rows[r];
+    let score = 0;
+    row.forEach(cell => {
+      const norm = normalizeHeader(cell);
+      if (!norm) return;
+      if (detectDirHeader(cell, true)) score += 4;
+      if (isLevelHeader(norm)) score += 3;
+      if (isTitleHeader(norm)) score += 3;
+      if (isMarkdownHeader(norm)) score += 3;
+      if (isSummaryHeader(norm)) score += 2;
+      if (fieldKeyForHeader(cell)) score += 1;
+    });
+    if (row.some(cell => /^#{1,6}\s+/.test(normalizeCellText(cell)))) score += 2;
+    if (score > 0 && (!best || score > best.score)) best = {rowIndex: r, score};
+  }
+  return best && best.score >= 4 ? best : null;
+}
+
+function identifyImportColumns(headerRow) {
+  const rawDirCols = [];
+  let levelCol = null;
+  let titleCol = null;
+  let markdownCol = null;
+  let summaryCol = null;
+  let score = 0;
+
+  headerRow.forEach((header, idx) => {
+    const norm = normalizeHeader(header);
+    if (!norm) return;
+    const dir = detectDirHeader(header, true);
+    if (dir) {
+      rawDirCols.push({...dir, idx});
+      score += 5;
+      return;
+    }
+    if (levelCol === null && isLevelHeader(norm)) {
+      levelCol = idx;
+      score += 4;
+      return;
+    }
+    if (titleCol === null && isTitleHeader(norm)) {
+      titleCol = idx;
+      score += 4;
+      return;
+    }
+    if (markdownCol === null && isMarkdownHeader(norm)) {
+      markdownCol = idx;
+      score += 4;
+      return;
+    }
+    if (summaryCol === null && isSummaryHeader(norm)) {
+      summaryCol = idx;
+      score += 2;
+    }
+  });
+
+  const hasMap = rawDirCols.some(col => col.kind === 'map');
+  const dirCols = rawDirCols.map(col => {
+    if (col.kind === 'map') return {...col, level: 1};
+    if (col.fromHash) return col;
+    return {...col, level: hasMap ? Math.min(6, col.level + 1) : col.level};
+  }).sort((a, b) => a.level - b.level || a.idx - b.idx);
+
+  return {dirCols, levelCol, titleCol, markdownCol, summaryCol, score};
+}
+
+function buildMarkdownFromDirectoryColumns(rows, dirCols, summaryCol) {
+  const output = [];
+  const stack = [];
+  const nodeByPath = new Map();
+  let currentPathKey = '';
+  let nodeCount = 0;
+
+  rows.forEach(row => {
+    let deepest = null;
+    dirCols.forEach(col => {
+      const title = cleanHeadingTitle(row[col.idx]);
+      if (title) deepest = {level: col.level, title, idx: col.idx};
+    });
+
+    if (!deepest) {
+      const summaryOnly = getRowSummary(row, summaryCol);
+      if (summaryOnly && currentPathKey && nodeByPath.has(currentPathKey)) {
+        appendBodyToNode(output, nodeByPath.get(currentPathKey), summaryOnly);
+      }
+      return;
+    }
+
+    dirCols.forEach(col => {
+      const title = cleanHeadingTitle(row[col.idx]);
+      if (!title) return;
+      const level = Math.max(1, Math.min(6, col.level));
+      stack[level - 1] = title;
+      stack.length = level;
+      const pathKey = stack.map((item, i) => `${i + 1}:${item}`).join('>');
+      if (!nodeByPath.has(pathKey)) {
+        nodeByPath.set(pathKey, output.length);
+        output.push({level, title, body: []});
+        nodeCount++;
+      }
+      currentPathKey = pathKey;
+    });
+
+    const body = getRowSummary(row, summaryCol);
+    if (body && currentPathKey && nodeByPath.has(currentPathKey)) {
+      appendBodyToNode(output, nodeByPath.get(currentPathKey), body);
+    }
+  });
+
+  return {markdown: stringifyImportedNodes(output), nodeCount};
+}
+
+function buildMarkdownFromLevelTitleColumns(rows, levelCol, titleCol, summaryCol) {
+  const output = [];
+  let lastNodeIdx = -1;
+  let nodeCount = 0;
+
+  rows.forEach(row => {
+    const title = cleanHeadingTitle(row[titleCol]);
+    const level = parseHeadingLevel(row[levelCol]);
+    if (title && level) {
+      output.push({level, title, body: []});
+      lastNodeIdx = output.length - 1;
+      nodeCount++;
+    }
+    const body = getRowSummary(row, summaryCol);
+    if (body && lastNodeIdx >= 0) appendBodyToNode(output, lastNodeIdx, body);
+  });
+
+  return {markdown: stringifyImportedNodes(output), nodeCount};
+}
+
+function buildMarkdownFromMarkdownColumn(rows, headerRowIndex, markdownCol, summaryCol) {
+  const output = [];
+  let lastNodeIdx = -1;
+  let nodeCount = 0;
+
+  rows.forEach(row => {
+    const raw = normalizeCellText(row[markdownCol]);
+    if (raw) {
+      raw.split(/\r?\n/).forEach(line => {
+        const hm = line.trim().match(/^(#{1,6})\s+(.+)/);
+        if (!hm) return;
+        output.push({level: hm[1].length, title: cleanHeadingTitle(hm[2]), body: []});
+        lastNodeIdx = output.length - 1;
+        nodeCount++;
+      });
+    }
+    const body = getRowSummary(row, summaryCol);
+    if (body && lastNodeIdx >= 0) appendBodyToNode(output, lastNodeIdx, body);
+  });
+
+  return {markdown: stringifyImportedNodes(output), nodeCount};
+}
+
+function appendBodyToNode(output, nodeIdx, bodyText) {
+  if (!output[nodeIdx]) return;
+  markdownBodyLines(bodyText).forEach(line => {
+    if (!output[nodeIdx].body.includes(line)) output[nodeIdx].body.push(line);
+  });
+}
+
+function stringifyImportedNodes(nodes) {
+  const lines = [];
+  nodes.forEach(node => {
+    lines.push(`${'#'.repeat(Math.max(1, Math.min(6, node.level)))} ${node.title}`);
+    if (node.body.length) {
+      lines.push('');
+      node.body.forEach(line => lines.push(line));
+      lines.push('');
+    }
+  });
+  return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n';
+}
+
+function getRowSummary(row, summaryCol) {
+  if (summaryCol === null || summaryCol === undefined || summaryCol < 0) return '';
+  return normalizeCellText(row[summaryCol]);
+}
+
+function markdownBodyLines(value) {
+  return String(value || '')
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => /^#{1,6}\s+/.test(line) ? `\\${line}` : line);
+}
+
+function cleanHeadingTitle(value) {
+  return normalizeCellText(value)
+    .replace(/^\s*#{1,6}\s+/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function parseHeadingLevel(value) {
+  const text = normalizeCellText(value);
+  if (!text) return null;
+  const hash = text.match(/#{1,6}/);
+  if (hash) return hash[0].length;
+  const digit = text.match(/[1-6]/);
+  if (digit) return Number(digit[0]);
+  const cnMap = {'一':1,'二':2,'三':3,'四':4,'五':5,'六':6};
+  for (const [ch, level] of Object.entries(cnMap)) {
+    if (text.includes(ch + '级')) return level;
+  }
+  return null;
+}
+
+function normalizeCellText(value) {
+  if (value === null || value === undefined) return '';
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return String(value)
+    .replace(/\u00a0/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim();
+}
+
+function normalizeHeader(value) {
+  return normalizeCellText(value)
+    .replace(/\*/g, '')
+    .replace(/[：:]/g, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
+}
+
+function detectDirHeader(value, allowHash) {
+  const text = normalizeCellText(value);
+  const norm = normalizeHeader(value);
+  if (!norm) return null;
+  if (allowHash && /^#{1,6}$/.test(text.trim())) {
+    return {kind:'hash', level: text.trim().length, fromHash: true};
+  }
+  for (const item of DIR_HEADER_ALIASES) {
+    if (item.labels.some(label => normalizeHeader(label) === norm)) {
+      return {...item};
+    }
+  }
+  const hMatch = norm.match(/^h([1-6])$/);
+  if (hMatch) return {kind:'hash', level: Number(hMatch[1]), fromHash: true};
+  return null;
+}
+
+function isLevelHeader(norm) {
+  return LEVEL_HEADER_ALIASES.some(label => normalizeHeader(label) === norm);
+}
+
+function isTitleHeader(norm) {
+  return TITLE_HEADER_ALIASES.some(label => normalizeHeader(label) === norm);
+}
+
+function isMarkdownHeader(norm) {
+  return MARKDOWN_HEADER_ALIASES.some(label => normalizeHeader(label) === norm);
+}
+
+function isSummaryHeader(norm) {
+  return SUMMARY_HEADER_ALIASES.some(label => normalizeHeader(label) === norm);
+}
+
+function countImportedFields(fieldConfig) {
+  if (!fieldConfig || !Array.isArray(fieldConfig.headers)) return 0;
+  const seen = new Set();
+  fieldConfig.headers.forEach((header, idx) => {
+    const norm = normalizeHeader(header);
+    if (!norm || fieldConfig.usedColumnIndexes.has(idx) || SKIP_IMPORT_FIELD_HEADERS.includes(norm)) return;
+    const key = fieldKeyForHeader(header) || norm;
+    seen.add(key);
+  });
+  return seen.size;
+}
+
+function applyImportedFieldConfig(fieldConfig) {
+  initFieldState();
+  if (!fieldConfig || !Array.isArray(fieldConfig.headers)) return;
+
+  const importedKnown = new Map();
+  const importedCustom = [];
+  const usedLabels = new Set();
+
+  fieldConfig.headers.forEach((header, idx) => {
+    const label = cleanFieldLabel(header);
+    const norm = normalizeHeader(label);
+    if (!norm || fieldConfig.usedColumnIndexes.has(idx) || SKIP_IMPORT_FIELD_HEADERS.includes(norm)) return;
+    if (usedLabels.has(norm)) return;
+    usedLabels.add(norm);
+
+    const values = fieldConfig.rows.map(row => normalizeCellText(row[idx])).filter(Boolean);
+    const key = fieldKeyForHeader(label);
+    const inferred = inferImportedFieldType(values);
+
+    if (key) {
+      importedKnown.set(key, {values, inferred, label});
+    } else {
+      importedCustom.push({label, values, inferred});
+    }
+  });
+
+  if (importedKnown.has('keyPoints') && !importedKnown.has('frameworkSummary')) {
+    importedKnown.set('frameworkSummary', {values: [], inferred: {type:'computed', options: []}, label:'导出框架内概要'});
+  }
+
+  const nextState = ALL_FIELDS.map(base => {
+    const imported = importedKnown.get(base.key);
+    const isComputed = base.valueType === 'computed';
+    const next = {
+      ...base,
+      isCustom: false,
+      enabled: base.defaultOn || !!imported,
+      currentType: isComputed ? 'computed' : (imported ? inferCurrentTypeForBase(base, imported.inferred) : base.valueType),
+      value: base.defaultVal || '',
+      options: base.options ? [...base.options] : [],
+    };
+    if (imported && next.currentType === 'options') {
+      next.options = mergeOptions(next.options, imported.inferred.options);
+    }
+    return next;
+  });
+
+  importedCustom.forEach(item => {
+    const type = item.inferred.type;
+    nextState.push({
+      key: 'custom_' + (++customKeyCounter),
+      label: item.label,
+      tag: item.label,
+      isCustom: true,
+      alwaysOn: false,
+      defaultOn: true,
+      enabled: true,
+      currentType: type,
+      valueType: type,
+      value: '',
+      options: type === 'options' ? item.inferred.options : [],
+    });
+  });
+
+  fieldState = nextState;
+}
+
+function fieldKeyForHeader(header) {
+  const norm = normalizeHeader(header);
+  if (!norm) return null;
+  const alias = {
+    信息类型: 'infoType',
+    更新类型: 'updateType',
+    版本: 'version',
+    聚合: 'aggregate',
+    章节要点: 'keyPoints',
+    章节概要: 'keyPoints',
+    框架内概要: 'frameworkSummary',
+    导出框架内概要: 'frameworkSummary',
+    对应友商: 'competitor',
+    友商借鉴内容: 'compDetail',
+    具体友商可借鉴内容: 'compDetail',
+    需提供的素材: 'materials',
+    素材提供方: 'matSource',
+    素材提供进度: 'matProgress',
+    素材具体位置: 'matLocation',
+    中文责任人: 'owner',
+    责任人: 'owner',
+    中文进度: 'progress',
+    进度: 'progress',
+    中文完成日期: 'dueDate',
+    完成日期: 'dueDate',
+    备注: 'remark',
+  };
+  if (alias[norm]) return alias[norm];
+  const found = ALL_FIELDS.find(field => normalizeHeader(field.label) === norm || normalizeHeader(field.tag) === norm);
+  return found ? found.key : null;
+}
+
+function inferCurrentTypeForBase(base, inferred) {
+  if (base.valueType === 'computed') return 'computed';
+  if (base.valueType === 'options') return 'options';
+  return inferred.type;
+}
+
+function inferImportedFieldType(values) {
+  const options = uniqueNonEmpty(values)
+    .filter(value => value.length <= 60)
+    .slice(0, 60);
+  const nonEmptyCount = values.length;
+  const shouldUseOptions =
+    options.length >= 2 &&
+    options.length <= 30 &&
+    options.length <= Math.max(8, Math.ceil(nonEmptyCount * 0.7));
+  return {type: shouldUseOptions ? 'options' : 'input', options: shouldUseOptions ? options : []};
+}
+
+function uniqueNonEmpty(values) {
+  const seen = new Set();
+  const result = [];
+  values.forEach(value => {
+    const text = normalizeCellText(value);
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    result.push(text);
+  });
+  return result;
+}
+
+function mergeOptions(baseOptions, importedOptions) {
+  return uniqueNonEmpty([...(baseOptions || []), ...(importedOptions || [])]);
+}
+
+function cleanFieldLabel(header) {
+  return normalizeCellText(header).replace(/\*/g, '').trim();
 }
 
 // ══════════════════════════════════════════════
@@ -3101,6 +3698,7 @@ function buildSheetFramework(nodes, enabledFields) {
     {key:'version',     label:'版本'},
     {key:'aggregate',   label:'聚合'},
     {key:'keyPoints',   label:'章节要点'},
+    {key:'frameworkSummary', label:'框架内概要'},
     {key:'competitor',  label:'对应友商'},
     {key:'compDetail',  label:'具体友商可借鉴内容'},
     {key:'materials',   label:'需提供的素材'},
@@ -3159,6 +3757,8 @@ function buildSheetFramework(nodes, enabledFields) {
           val = node.isTask
             ? (fs.options.find(o => /task/i.test(o)) || 'Task')
             : (fs.options.find(o => /concept/i.test(o)) || 'Concept');
+        } else if (col.key === 'frameworkSummary') {
+          val = getFrameworkSummaryText(node);
         } else {
           val = fs.value || '';
         }
@@ -3421,6 +4021,9 @@ function getFrameworkFieldValue(node, rowIndex, col, fs) {
   if (col.key === 'updateType' && !fs.value) {
     return node.parentId === null ? 'New Map' : 'New Topic';
   }
+  if (col.key === 'frameworkSummary') {
+    return getFrameworkSummaryText(node);
+  }
   return fs.value || '';
 }
 
@@ -3517,6 +4120,7 @@ function buildFrameworkSheetExcel(workbook, nodes, enabledFields) {
     {key:'version',     label:'版本*'},
     {key:'aggregate',   label:'聚合'},
     {key:'keyPoints',   label:'章节要点*'},
+    {key:'frameworkSummary', label:'框架内概要'},
     {key:'competitor',  label:'对应友商'},
     {key:'compDetail',  label:'具体友商可借鉴内容'},
     {key:'materials',   label:'需提供的素材'},
